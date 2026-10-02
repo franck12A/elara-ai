@@ -1,0 +1,12 @@
+app = 'system32-dry-headland-3850'
+primary_region = 'ord'
+
+# Bot de Telegram con long-polling: no sirve HTTP entrante, así que no hay
+# [http_service] ni health checks de Fly. Una sola máquina corriendo 24/7.
+# (El Dockerfile igual abre un mini-servidor en :3000 por si querés chequearlo.)
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpu_count = 1

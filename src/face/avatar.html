@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Elara</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: radial-gradient(ellipse at 50% 30%, #1c1b2e 0%, #0d0d12 70%);
+    }
+    #status {
+      position: fixed;
+      top: 14px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: #9d9db5;
+      font: 600 15px system-ui, sans-serif;
+      letter-spacing: 0.08em;
+      user-select: none;
+      pointer-events: none;
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">CARGANDO…</div>
+  <script>
+    const statusEl = document.getElementById("status");
+
+    function setStatus(msg) {
+      statusEl.textContent = msg;
+    }
+
+    function fail(msg) {
+      setStatus("⚠️ " + msg);
+      console.error("[Elara] " + msg);
+    }
+  </script>
+  <script
+    src="/vendor/pixi.min.js"
+    onerror="fail('no se pudo cargar pixi.js')"
+  ></script>
+  <script
+    src="/vendor/live2dcubismcore.min.js"
+    onerror="fail('no se pudo cargar Live2D Cubism Core')"
+  ></script>
+  <script
+    src="/vendor/pixi-live2d-display.min.js"
+    onerror="fail('no se pudo cargar pixi-live2d-display')"
+  ></script>
+  <script>
+    if (typeof PIXI === "undefined") {
+      fail("pixi.js no está cargado");
+    } else if (typeof Live2DCubismCore === "undefined") {
+      fail("Live2D Cubism Core no está cargado");
+    } else if (!PIXI.live2d) {
+      fail("pixi-live2d-display no se inicializó");
+    } else {
+      const MODEL_URL = "/vendor/haru/haru_greeter_t03.model3.json";
+      const MODEL_LOAD_TIMEOUT_MS = 20000;
+
+      let app;
+
+      try {
+        app = new PIXI.Application({
+          resizeTo: window,
+          backgroundAlpha: 0,
+          antialias: true,
+          powerPreference: "high-performance",
+        });
+      } catch (error) {
+        fail(
+          "WebGL no está disponible.\n" +
+            "Activá la aceleración de hardware en chrome://settings/system\n" +
+            "y recargá la página (Ctrl+F5).",
+        );
+        throw error;
+      }
+
+      document.body.appendChild(app.view);
+
+      app.view.addEventListener("webglcontextlost", (event) => {
+        event.preventDefault();
+        fail(
+          "Se perdió el contexto WebGL.\nRecargá la página (Ctrl+F5).",
+        );
+      });
+
+      let model = null;
+      let speaking = false;
+
+      // Estado de animación
+      let currentParams = {
+        mouthOpenY: 0,
+        leftEyeOpen: 1,
+        rightEyeOpen: 1,
+        leftEyeSmile: 0,
+        rightEyeSmile: 0,
+        browLY: 0,
+        browRY: 0,
+        browLForm: 0,
+        browRForm: 0,
+        browLX: 0,
+        browRX: 0,
+        browLAngle: 0,
+        browRAngle: 0,
+        mouthForm: 0,
+        eyeForm: 0,
+        eyeBallForm: 0,
+        tere: 0,
+        headTilt: 0,
+        headYaw: 0,
+        breath: 0,
+        blink: 0,
+        bodyAngleX: 0,
+        bodyAngleY: 0,
+        breathAmount: 0,
+        shoulderMove: 0,
+      };
+
+      // Para suavizado de parámetros
+      let prevParams = { ...currentParams };
+      const smoothingFactor = 0.25; // 0 = instantáneo, 1 = sin cambios
+
+      function layout() {
+        if (!model) return;
+        const h = window.innerHeight;
+        const w = window.innerWidth;
+        const scale = (h * 0.85) / model.height;
+        model.scale.set(scale);
+        model.anchor.set(0.5, 1);
+        model.position.set(w / 2, h * 0.98);
+      }
+
+      setStatus("Cargando el modelo de Elara…");
+
+      const modelPromise = PIXI.live2d.Live2DModel.from(MODEL_URL, {
+        autoInteract: true,
+      });
+
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "el modelo tardó más de 20 segundos en cargar",
+              ),
+            ),
+          MODEL_LOAD_TIMEOUT_MS,
+        );
+      });
+
+      Promise.race([modelPromise, timeoutPromise]).then(
+        (m) => {
+          model = m;
+          layout();
+          app.stage.addChild(m);
+          m.motion("Idle");
+          m.on("motionfinish", () => m.motion("Idle"));
+          setStatus("ELARA");
+          document.body.dataset.ready = "true";
+          window.__elara = { app, model, layout };
+        },
+        (error) => {
+          fail("no pude cargar el modelo: " + error.message);
+        },
+      );
+
+      window.addEventListener("resize", layout);
+
+      // Aplicar parámetros con suavizado
+      function applySmoothedParams() {
+        if (!model) return;
+
+        const core = model.internalModel.coreModel;
+
+        // Función helper para interpolar
+        const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+        // Suavizar todos los parámetros
+        const smoothed = {
+          mouthOpenY: lerp(prevParams.mouthOpenY, currentParams.mouthOpenY, smoothingFactor),
+          leftEyeOpen: lerp(prevParams.leftEyeOpen, currentParams.leftEyeOpen, smoothingFactor),
+          rightEyeOpen: lerp(prevParams.rightEyeOpen, currentParams.rightEyeOpen, smoothingFactor),
+          leftEyeSmile: lerp(prevParams.leftEyeSmile, currentParams.leftEyeSmile, smoothingFactor),
+          rightEyeSmile: lerp(prevParams.rightEyeSmile, currentParams.rightEyeSmile, smoothingFactor),
+          browLY: lerp(prevParams.browLY, currentParams.browLY, smoothingFactor),
+          browRY: lerp(prevParams.browRY, currentParams.browRY, smoothingFactor),
+          browLForm: lerp(prevParams.browLForm, currentParams.browLForm, smoothingFactor),
+          browRForm: lerp(prevParams.browRForm, currentParams.browRForm, smoothingFactor),
+          browLX: lerp(prevParams.browLX, currentParams.browLX, smoothingFactor),
+          browRX: lerp(prevParams.browRX, currentParams.browRX, smoothingFactor),
+          browLAngle: lerp(prevParams.browLAngle, currentParams.browLAngle, smoothingFactor),
+          browRAngle: lerp(prevParams.browRAngle, currentParams.browRAngle, smoothingFactor),
+          mouthForm: lerp(prevParams.mouthForm, currentParams.mouthForm, smoothingFactor),
+          eyeForm: lerp(prevParams.eyeForm, currentParams.eyeForm, smoothingFactor),
+          eyeBallForm: lerp(prevParams.eyeBallForm, currentParams.eyeBallForm, smoothingFactor),
+          tere: lerp(prevParams.tere, currentParams.tere, smoothingFactor),
+          headTilt: lerp(prevParams.headTilt, currentParams.headTilt, smoothingFactor),
+          headYaw: lerp(prevParams.headYaw, currentParams.headYaw, smoothingFactor),
+          breath: lerp(prevParams.breath, currentParams.breath, smoothingFactor),
+          bodyAngleX: lerp(prevParams.bodyAngleX, currentParams.bodyAngleX, smoothingFactor),
+          bodyAngleY: lerp(prevParams.bodyAngleY, currentParams.bodyAngleY, smoothingFactor),
+          breathAmount: lerp(prevParams.breathAmount, currentParams.breathAmount, smoothingFactor),
+          shoulderMove: lerp(prevParams.shoulderMove, currentParams.shoulderMove, smoothingFactor),
+        };
+
+        // Aplicar parámetros faciales
+        core.setParameterValueById("ParamMouthOpenY", smoothed.mouthOpenY);
+        core.setParameterValueById("ParamEyeLOpen", smoothed.leftEyeOpen);
+        core.setParameterValueById("ParamEyeROpen", smoothed.rightEyeOpen);
+        core.setParameterValueById("ParamEyeLSmile", smoothed.leftEyeSmile);
+        core.setParameterValueById("ParamEyeRSmile", smoothed.rightEyeSmile);
+        core.setParameterValueById("ParamBrowLY", smoothed.browLY);
+        core.setParameterValueById("ParamBrowRY", smoothed.browRY);
+        core.setParameterValueById("ParamBrowLForm", smoothed.browLForm);
+        core.setParameterValueById("ParamBrowRForm", smoothed.browRForm);
+        core.setParameterValueById("ParamBrowLX", smoothed.browLX);
+        core.setParameterValueById("ParamBrowRX", smoothed.browRX);
+        core.setParameterValueById("ParamBrowLAngle", smoothed.browLAngle);
+        core.setParameterValueById("ParamBrowRAngle", smoothed.browRAngle);
+        core.setParameterValueById("ParamMouthForm", smoothed.mouthForm);
+        core.setParameterValueById("ParamEyeForm", smoothed.eyeForm);
+        core.setParameterValueById("ParamEyeBallForm", smoothed.eyeBallForm);
+        core.setParameterValueById("ParamTere", smoothed.tere);
+        core.setParameterValueById("ParamEyeBallX", 0);
+        core.setParameterValueById("ParamEyeBallY", 0);
+
+        // Aplicar movimiento de cabeza
+        core.setParameterValueById("ParamAngleX", smoothed.headTilt * 0.15);
+        core.setParameterValueById("ParamAngleY", smoothed.headYaw * 0.1);
+
+        // Aplicar movimiento de cuerpo/torso
+        core.setParameterValueById("ParamBodyAngleX", smoothed.bodyAngleX);
+        core.setParameterValueById("ParamBodyAngleY", smoothed.bodyAngleY);
+
+        // Aplicar respiración
+        core.setParameterValueById("ParamBreath", smoothed.breathAmount);
+        core.setParameterValueById("ParamBustY", smoothed.breathAmount * 0.5);
+
+        // Actualizar prev para próxima iteración
+        prevParams = smoothed;
+      }
+
+      // Loop de animación principal
+      app.ticker.add(() => {
+        if (!model) return;
+        applySmoothedParams();
+      });
+    }
+
+    const source = new EventSource("/events");
+
+    source.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === "expression") {
+        if (model) model.expression(msg.expression);
+      } else if (msg.type === "speak") {
+        speaking = msg.on;
+      } else if (msg.type === "params") {
+        // Actualizar parámetros desde el servidor
+        const p = msg;
+        currentParams = {
+          mouthOpenY: p.mouthOpenY ?? 0,
+          leftEyeOpen: p.leftEyeOpen ?? 1,
+          rightEyeOpen: p.rightEyeOpen ?? 1,
+          leftEyeSmile: p.leftEyeSmile ?? 0,
+          rightEyeSmile: p.rightEyeSmile ?? 0,
+          browLY: p.browLY ?? 0,
+          browRY: p.browRY ?? 0,
+          browLForm: p.browLForm ?? 0,
+          browRForm: p.browRForm ?? 0,
+          browLX: p.browLX ?? 0,
+          browRX: p.browRX ?? 0,
+          browLAngle: p.browLAngle ?? 0,
+          browRAngle: p.browRAngle ?? 0,
+          mouthForm: p.mouthForm ?? 0,
+          eyeForm: p.eyeForm ?? 0,
+          eyeBallForm: p.eyeBallForm ?? 0,
+          tere: p.tere ?? 0,
+          headTilt: p.headTilt ?? 0,
+          headYaw: p.headYaw ?? 0,
+          breath: p.breath ?? 0,
+          blink: p.blink ?? 0,
+          bodyAngleX: p.bodyAngleX ?? 0,
+          bodyAngleY: p.bodyAngleY ?? 0,
+          breathAmount: p.breathAmount ?? 0,
+          shoulderMove: p.shoulderMove ?? 0,
+        };
+      }
+    };
+
+    source.onerror = () => {
+      if (!model) setStatus("ELARA (reconectando…)");
+    };
+  </script>
+</body>
+</html>

@@ -1,16 +1,43 @@
 {
   "name": "elara-ai",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Personal AI companion with voice interaction and physical hardware.",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx src/main.ts",
+    "test:groq": "tsx src/ai/test-groq.ts",
+    "models:groq": "tsx scripts/list-groq-models.ts",
+    "test:voice": "tsx src/voice/test-voice.ts",
+    "wa": "tsx src/whatsapp/main.ts",
+    "tg": "tsx src/telegram/main.ts",
+    "build": "tsc && node -e \"require('fs').copyFileSync('src/face/avatar.html','dist/face/avatar.html'); require('fs').cpSync('src/face/vendor','dist/face/vendor',{recursive:true})\"",
+    "start": "node dist/telegram/main.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "ai",
+    "claude",
+    "anthropic",
+    "typescript",
+    "nodejs",
+    "esp32",
+    "voice-assistant"
+  ],
+  "author": "Franco",
   "license": "ISC",
-  "description": "",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.28.0",
+    "@elevenlabs/elevenlabs-js": "^2.64.0",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "dotenv": "^17.4.2",
+    "grammy": "^1.46.0",
+    "groq-sdk": "^1.6.0",
+    "pino": "^10.3.1",
+    "qrcode-terminal": "^0.12.0",
+    "wave": "^0.2.3"
+  },
   "devDependencies": {
     "@types/node": "^26.3.0",
+    "@types/qrcode-terminal": "^0.12.2",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }

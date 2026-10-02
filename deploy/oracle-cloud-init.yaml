@@ -1,0 +1,52 @@
+#cloud-config
+# Se ejecuta solo en el PRIMER arranque de la VM de Oracle.
+# Instala Node 22 LTS + ffmpeg y crea el servicio systemd de Elara.
+
+package_update: true
+packages:
+  - ffmpeg
+  - git
+
+runcmd:
+  # Node 22 LTS desde NodeSource
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+  - node -v
+
+  # Código de Elara
+  - rm -rf /opt/elara
+  - git clone https://github.com/franck12A/elara-ai.git /opt/elara
+  - cd /opt/elara && npm install
+  - npm run build
+
+  # Servicio systemd (arranca solo al boot y se reinicia si crashea)
+  - |
+    cat > /etc/systemd/system/elara.service <<'EOF'
+    [Unit]
+    Description=Elara (bot de Telegram)
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=simple
+    WorkingDirectory=/opt/elara
+    ExecStart=/usr/bin/node dist/telegram/main.js
+    Restart=always
+    RestartSec=5
+    Environment=NODE_ENV=production
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+  - systemctl daemon-reload
+
+  # Aviso visible al entrar por SSH para que Franco sepa que falta el .env
+  - |
+    cat > /etc/profile.d/elara-warning.sh <<'EOF'
+    if [ ! -f /opt/elara/.env ]; then
+      echo ""
+      echo "  ⚠️  FALTA: crear /opt/elara/.env (mirá deploy/ORACLE-SETUP.md paso 5)"
+      echo "     y después: sudo systemctl enable --now elara"
+      echo ""
+    fi
+    EOF

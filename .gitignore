@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.local
+.env.*
+!.env.example
+
+# Local data and memory
+data/
+
+# Sesión de WhatsApp de Elara (credenciales — nunca commitear)
+wa_auth/
+
+# Generated files
+*.wav
+temp-*.wav
+
+# Python
+__pycache__/
+*.pyc
+
+# Scripts temporales locales
+.tmp-*
+
+# Logs y capturas de debug
+*.log
+elara-*.png
+
+# Prototipo de animación facial
+frames/
+models/
+face_landmarks.json
+elara-talking.mp4

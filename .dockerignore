@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.env.*
+wa_auth
+.git
+.gitignore
+*.md
+.tmp-*
+*.png
+fly.toml
+scripts
