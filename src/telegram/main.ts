@@ -34,6 +34,9 @@ async function main(): Promise<void> {
     ownerId: process.env.TG_OWNER_ID?.trim() || undefined,
     replyMode,
     proactiveTimes: parseTimes(process.env.TG_PROACTIVE_TIMES),
+    spontaneousWindow: process.env.TG_SPONTANEOUS_WINDOW?.trim() || undefined,
+    spontaneousMinMinutes: parseNumber(process.env.TG_SPONTANEOUS_MIN_MINUTES),
+    spontaneousMaxMinutes: parseNumber(process.env.TG_SPONTANEOUS_MAX_MINUTES),
   });
 
   await bot.start();
@@ -72,6 +75,12 @@ function parseReplyMode(value: string | undefined): ReplyMode {
     return value;
   }
   return "voice";
+}
+
+function parseNumber(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 function parseTimes(value: string | undefined): string[] {

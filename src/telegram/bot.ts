@@ -20,6 +20,13 @@ export interface TelegramBotOptions {
   proactiveTimes: string[];
   /** Prompt opcional para guiar los mensajes proactivos. */
   proactivePrompt?: string | undefined;
+
+  /** Ventana horaria "HH:MM-HH:MM" en la que puede escribir por antojo. */
+  spontaneousWindow?: string | undefined;
+  /** Minutos de silencio mínimos antes de un antojo (default 45). */
+  spontaneousMinMinutes?: number | undefined;
+  /** Minutos de silencio máximos entre antojos (default 180). */
+  spontaneousMaxMinutes?: number | undefined;
 }
 
 const PROACTIVE_CHECK_MS = 30_000;
@@ -27,6 +34,18 @@ const DEFAULT_PROACTIVE_PROMPT =
   "No te estoy hablando: es un horario programado y querés saludarme. " +
   "Mandame un mensaje proactivo corto y natural, como lo haría una compañera " +
   "(buenos días, buenas noches o un seguimiento de algo de lo que hayamos hablado).";
+
+// ── Mensajes espontáneos ("antojos": escribe cuando quiere) ─────────
+const DEFAULT_SPONTANEOUS_MIN_MINUTES = 45;
+const DEFAULT_SPONTANEOUS_MAX_MINUTES = 180;
+const DEFAULT_SPONTANEOUS_WINDOW: [number, number] = [540, 1380];
+/** A veces no le pinta y no manda nada: así no queda predecible. */
+const SPONTANEOUS_SKIP_CHANCE = 0.25;
+const DEFAULT_SPONTANEOUS_PROMPT =
+  "No te estoy hablando: te agarró el antojo de escribirte de la nada. " +
+  "Mandame un mensaje espontáneo corto y natural, como lo haría una compañera " +
+  "que está pensando en la otra persona: algo que se te ocurrió, una pregunta, " +
+  "un comentario o un saludo según la hora.";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -56,6 +75,26 @@ function splitLikeAPerson(text: string): string[] {
   return parts.length > 0 ? parts : [text];
 }
 
+/** Parsea "HH:MM-HH:MM" a minutos; null si el formato es inválido. */
+export function parseSpontaneousWindow(
+  value: string,
+): [number, number] | null {
+  const match = value
+    .trim()
+    .match(/^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return null;
+
+  const from = Number(match[1]) * 60 + Number(match[2]);
+  const to = Number(match[3]) * 60 + Number(match[4]);
+  return [from, to];
+}
+
+function formatWindow([from, to]: [number, number]): string {
+  const hhmm = (m: number) =>
+    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return `${hhmm(from)}-${hhmm(to)}`;
+}
+
 export class ElaraTelegramBot {
   private readonly bot: Bot;
   private readonly elara: Elara;
@@ -64,6 +103,10 @@ export class ElaraTelegramBot {
   private readonly queues = new Map<number, { tail: Promise<void> }>();
   private readonly proactiveFired = new Set<string>();
   private proactiveTimer: ReturnType<typeof setInterval> | undefined;
+  private spontaneousTimer: ReturnType<typeof setTimeout> | undefined;
+  private spontaneousWindow: [number, number] = DEFAULT_SPONTANEOUS_WINDOW;
+  /** Última vez que el dueño mandó algo (para respetar el silencio). */
+  private lastInteractionAt = Date.now();
   private polling: Promise<void> | undefined;
   private connected = false;
   /** Últimos modos usados, para variar texto/voz en modo "mixed". */
@@ -78,6 +121,10 @@ export class ElaraTelegramBot {
     this.voice = voice;
     this.options = options;
     this.bot = new Bot(options.token);
+
+    this.spontaneousWindow =
+      parseSpontaneousWindow(options.spontaneousWindow ?? "") ??
+      DEFAULT_SPONTANEOUS_WINDOW;
   }
 
   /** Valida el token, engancha los handlers y arranca el polling. */
@@ -103,6 +150,7 @@ export class ElaraTelegramBot {
     this.connected = true;
     console.log(`🤖 Elara está en Telegram como @${me.username}.`);
     this.startProactiveScheduler();
+    this.startSpontaneousScheduler();
 
     this.polling = this.bot
       .start({ drop_pending_updates: true })
@@ -121,6 +169,10 @@ export class ElaraTelegramBot {
     if (this.proactiveTimer) {
       clearInterval(this.proactiveTimer);
       this.proactiveTimer = undefined;
+    }
+    if (this.spontaneousTimer) {
+      clearTimeout(this.spontaneousTimer);
+      this.spontaneousTimer = undefined;
     }
     await this.bot.stop();
     await this.polling;
@@ -153,6 +205,7 @@ export class ElaraTelegramBot {
     const userText = await this.extractUserText(ctx);
     if (!userText) return;
 
+    this.lastInteractionAt = Date.now();
     console.log(
       `📨 [${ctx.from?.id ?? "?"}] Telegram → Elara: ${userText}`,
     );
@@ -376,5 +429,87 @@ export class ElaraTelegramBot {
     } catch (error) {
       console.error("❌ Error en mensaje proactivo:", error);
     }
+  }
+
+  // ── Mensajes espontáneos (que Elara escriba cuando quiera) ─────────
+
+  private startSpontaneousScheduler(): void {
+    if (this.spontaneousTimer) return;
+
+    const owner = this.options.ownerId;
+    if (!owner || !/^\d+$/.test(owner)) {
+      console.warn(
+        "⚠️  Mensajes espontánes desactivados: TG_OWNER_ID tiene que ser un " +
+          "ID numérico para que Elara sepa a quién escribirle.",
+      );
+      return;
+    }
+
+    const min =
+      this.options.spontaneousMinMinutes ?? DEFAULT_SPONTANEOUS_MIN_MINUTES;
+    const max =
+      this.options.spontaneousMaxMinutes ?? DEFAULT_SPONTANEOUS_MAX_MINUTES;
+
+    this.scheduleNextSpontaneous(min, max);
+    console.log(
+      `✨ Antojos activos: Elara puede escribir sola entre ` +
+        `${formatWindow(this.spontaneousWindow)} si pasan más de ${min} min sin charlar.`,
+    );
+  }
+
+  /** Agenda el próximo antojo con un delay aleatorio entre min y max minutos. */
+  private scheduleNextSpontaneous(min: number, max: number): void {
+    const minutes = min + Math.random() * Math.max(max - min, 0);
+    this.spontaneousTimer = setTimeout(
+      () => {
+        void this.checkSpontaneous();
+        this.scheduleNextSpontaneous(min, max);
+      },
+      minutes * 60_000,
+    );
+  }
+
+  private async checkSpontaneous(): Promise<void> {
+    if (!this.connected) return;
+
+    const owner = this.options.ownerId;
+    if (!owner || !/^\d+$/.test(owner)) return;
+
+    // Solo si estamos dentro de la ventana horaria permitida.
+    if (!this.inSpontaneousWindow()) return;
+
+    // Respetar el silencio: solo escribe si hace rato no charlan.
+    const minMinutes =
+      this.options.spontaneousMinMinutes ?? DEFAULT_SPONTANEOUS_MIN_MINUTES;
+    const silentMinutes =
+      (Date.now() - this.lastInteractionAt) / 60_000;
+    if (silentMinutes < minMinutes) return;
+
+    // A veces no le pinta y manda nada.
+    if (Math.random() < SPONTANEOUS_SKIP_CHANCE) return;
+
+    const chatId = Number(owner);
+    const prompt = DEFAULT_SPONTANEOUS_PROMPT;
+
+    try {
+      console.log(
+        `✨ Antojo de Elara (${silentMinutes.toFixed(0)} min de silencio).`,
+      );
+      const response = await this.elara.chat(prompt);
+      // Cuenta como interacción para no amontonar antojos seguidos.
+      this.lastInteractionAt = Date.now();
+      await this.deliver(chatId, response);
+    } catch (error) {
+      console.error("❌ Error en mensaje espontáneo:", error);
+    }
+  }
+
+  private inSpontaneousWindow(): boolean {
+    const minutes = new Date().getHours() * 60 + new Date().getMinutes();
+    const [from, to] = this.spontaneousWindow;
+
+    if (from <= to) return minutes >= from && minutes < to;
+    // Ventana que cruza medianoche (ej: 20:00-02:00).
+    return minutes >= from || minutes < to;
   }
 }
