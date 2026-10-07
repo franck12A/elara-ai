@@ -1,4 +1,4 @@
-// Debug: abre Chrome headless con CDP, navega a la cara de Elara,
+// Debug: abre Chrome headless con CDP, navega a la cara de Jarvis,
 // captura consola + screenshot. Uso: npx tsx scripts/cdp-shot.ts [url]
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 const url = process.argv[2] ?? "http://localhost:4321";
 const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const userDataDir = mkdtempSync(join(tmpdir(), "elara-cdp-"));
+const userDataDir = mkdtempSync(join(tmpdir(), "jarvis-cdp-"));
 
 const chrome = spawn(chromePath, [
   "--headless=new",
@@ -91,7 +91,7 @@ try {
 
   const shot = await send("Page.captureScreenshot", { format: "png" });
   const { writeFileSync } = await import("node:fs");
-  writeFileSync("elara-debug.png", Buffer.from(shot.data, "base64"));
+  writeFileSync("jarvis-debug.png", Buffer.from(shot.data, "base64"));
 
   const status = await send("Runtime.evaluate", {
     expression: `document.getElementById("status").textContent + " | ready=" + document.body.dataset.ready + " | canvas=" + document.querySelectorAll("canvas").length + " | pixi=" + (typeof PIXI) + " | live2d=" + (typeof Live2DCubismCore) + " | pixiLive2d=" + (!!PIXI?.live2d)`,
@@ -101,8 +101,8 @@ try {
 
   const diag = await send("Runtime.evaluate", {
     expression: `(() => {
-      const e = window.__elara;
-      if (!e) return "sin __elara";
+      const e = window.__jarvis;
+      if (!e) return "sin __jarvis";
       const m = e.model;
       const bounds = m.getBounds();
       return JSON.stringify({
@@ -127,8 +127,8 @@ try {
 
   const render = await send("Runtime.evaluate", {
     expression: `(() => {
-      const e = window.__elara;
-      if (!e) return "sin __elara";
+      const e = window.__jarvis;
+      if (!e) return "sin __jarvis";
       const gl = e.app.renderer.gl;
       const info = {
         glRenderer: gl.getParameter(gl.RENDERER),
@@ -147,11 +147,11 @@ try {
     awaitPromise: true,
   });
   console.log("RENDER:", render.result?.value ?? JSON.stringify(render.result));
-  console.log("screenshot guardado en elara-debug.png");
+  console.log("screenshot guardado en jarvis-debug.png");
 
   // Guardar el extract del stage para analizar si el modelo se dibujó.
   const extractB64 = await send("Runtime.evaluate", {
-    expression: `window.__elara ? window.__elara.app.renderer.extract.base64(window.__elara.app.stage) : null`,
+    expression: `window.__jarvis ? window.__jarvis.app.renderer.extract.base64(window.__jarvis.app.stage) : null`,
     returnByValue: true,
     awaitPromise: true,
   });
@@ -159,10 +159,10 @@ try {
   if (b64 && typeof b64 === "string") {
     const { writeFileSync } = await import("node:fs");
     writeFileSync(
-      "elara-stage-extract.png",
+      "jarvis-stage-extract.png",
       Buffer.from(b64.replace(/^data:image\/png;base64,/, ""), "base64"),
     );
-    console.log("extract guardado en elara-stage-extract.png");
+    console.log("extract guardado en jarvis-stage-extract.png");
   }
   console.log("CONSOLA:");
   for (const m of consoleMsgs) console.log("  ", m);

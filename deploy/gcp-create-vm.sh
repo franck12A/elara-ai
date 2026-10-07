@@ -1,6 +1,6 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────
-# Crea la VM gratis de Google Cloud y deploya Elara (un solo comando).
+# Crea la VM gratis de Google Cloud y deploya Jarvis (un solo comando).
 # Requiere: gcloud instalado, 'gcloud auth login' hecho y el alta de
 # billing en console.cloud.google.com.
 # Uso:  bash deploy/gcp-create-vm.sh
@@ -8,16 +8,16 @@
 set -euo pipefail
 
 GCLOUD="$LOCALAPPDATA/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
-KEY="$HOME/.ssh/gcp_elara"
+KEY="$HOME/.ssh/gcp_jarvis"
 ZONE="us-central1-a"
-VM="elara"
+VM="jarvis"
 
 # 1. Proyecto: usar el activo o crear uno
 PROJECT=$("$GCLOUD" config get-value project 2>/dev/null || true)
 if [ -z "$PROJECT" ] || [ "$PROJECT" = "(unset)" ]; then
-  PROJECT="elara-bot-$(date +%s)"
+  PROJECT="jarvis-bot-$(date +%s)"
   echo "📦 Creando proyecto $PROJECT…"
-  "$GCLOUD" projects create "$PROJECT" --name="Elara"
+  "$GCLOUD" projects create "$PROJECT" --name="Jarvis"
   "$GCLOUD" billing projects link "$PROJECT" \
     --billing-account="$("$GCLOUD" billing accounts list --format='value(name)' --limit=1)"
   "$GCLOUD" services enable compute.googleapis.com --project="$PROJECT"
@@ -54,9 +54,9 @@ echo "🔧 Instalando Node 22 + ffmpeg (2-4 min)…"
 ssh -i "$KEY" "ubuntu@$IP" 'sudo bash -s' < deploy/gcp-setup.sh
 
 # 5. Cargar .env y arrancar el servicio
-echo "🔑 Cargando .env y arrancando Elara…"
-scp -i "$KEY" -o StrictHostKeyChecking=no .env "ubuntu@$IP:/tmp/elara.env"
+echo "🔑 Cargando .env y arrancando Jarvis…"
+scp -i "$KEY" -o StrictHostKeyChecking=no .env "ubuntu@$IP:/tmp/jarvis.env"
 ssh -i "$KEY" "ubuntu@$IP" 'sudo bash -s' < deploy/vm-setup.sh
 
 echo ""
-echo "🎉 LISTO: Elara corre en $IP — revisá Telegram."
+echo "🎉 LISTO: Jarvis corre en $IP — revisá Telegram."

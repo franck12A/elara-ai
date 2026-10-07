@@ -1,9 +1,9 @@
-import type { ElaraTool } from "./tools.js";
+import type { JarvisTool } from "./tools.js";
 import type { MemoryService } from "./memory.js";
 
 export function createMemoryTool(
   memory: MemoryService,
-): ElaraTool {
+): JarvisTool {
   return {
     name: "save_memory",
 
@@ -45,12 +45,12 @@ export function createMemoryTool(
 
 export function createGetMemoryTool(
   memory: MemoryService,
-): ElaraTool {
+): JarvisTool {
   return {
     name: "get_memory",
 
     description:
-      "Busca un recuerdo guardado en la memoria de Elara usando su clave.",
+      "Busca un recuerdo guardado en la memoria de Jarvis usando su clave.",
 
     parameters: {
       type: "object",
@@ -86,12 +86,12 @@ export function createGetMemoryTool(
 
 export function createSearchMemoryTool(
   memory: MemoryService,
-): ElaraTool {
+): JarvisTool {
   return {
     name: "search_memory",
 
     description:
-      "Busca recuerdos de Elara relacionados con una consulta. Úsala cuando el usuario pregunte por algo que podría estar guardado en la memoria pero no conozcas la clave exacta.",
+      "Busca recuerdos de Jarvis relacionados con una consulta. Úsala cuando el usuario pregunte por algo que podría estar guardado en la memoria pero no conozcas la clave exacta.",
 
     parameters: {
       type: "object",

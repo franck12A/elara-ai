@@ -31,7 +31,7 @@ async function withTempFiles<T>(
 ): Promise<T> {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   const paths = suffixes.map((suffix, i) =>
-    path.join(os.tmpdir(), `elara-wa-${id}-${i}${suffix}`),
+    path.join(os.tmpdir(), `jarvis-wa-${id}-${i}${suffix}`),
   );
 
   try {

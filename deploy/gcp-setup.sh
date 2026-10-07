@@ -1,13 +1,13 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────
-# Setup de Elara para la VM gratis de Google Cloud (e2-micro).
+# Setup de Jarvis para la VM gratis de Google Cloud (e2-micro).
 # Pegá este script completo en: Management → Automation → Startup script
 # Se ejecuta solo en el primer arranque de la VM.
 # ─────────────────────────────────────────────────────────────────────
 set -euo pipefail
-exec > /var/log/elara-setup.log 2>&1
+exec > /var/log/jarvis-setup.log 2>&1
 
-echo "=== Setup de Elara: inicio $(date) ==="
+echo "=== Setup de Jarvis: inicio $(date) ==="
 
 # Swap de 1GB: la e2-micro tiene 1GB de RAM y el build lo necesita.
 if ! swapon --show | grep -q /swapfile; then
@@ -25,23 +25,23 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
 node -v
 
-# Código de Elara
-rm -rf /opt/elara
-git clone https://github.com/franck12A/elara-ai.git /opt/elara
-cd /opt/elara
+# Código de Jarvis
+rm -rf /opt/jarvis
+git clone https://github.com/franck12A/jarvis-ai.git /opt/jarvis
+cd /opt/jarvis
 npm install
 npm run build
 
 # Servicio systemd: arranca al boot y se reinicia si crashea
-cat > /etc/systemd/system/elara.service <<'EOF'
+cat > /etc/systemd/system/jarvis.service <<'EOF'
 [Unit]
-Description=Elara (bot de Telegram)
+Description=Jarvis (bot de Telegram)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/elara
+WorkingDirectory=/opt/jarvis
 ExecStart=/usr/bin/node dist/telegram/main.js
 Restart=always
 RestartSec=5
@@ -52,5 +52,5 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 
-echo "=== Setup de Elara: terminado $(date) ==="
-echo "Falta: copiar /opt/elara/.env y correr: sudo systemctl enable --now elara"
+echo "=== Setup de Jarvis: terminado $(date) ==="
+echo "Falta: copiar /opt/jarvis/.env y correr: sudo systemctl enable --now jarvis"

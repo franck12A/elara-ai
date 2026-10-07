@@ -1,0 +1,1261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis</title>
+<style>
+  :root {
+    --bg: #0c0c12;
+    --bg2: #14131f;
+    --panel: #1a1828;
+    --line: #2b2743;
+    --text: #e9e6ff;
+    --muted: #8f89b8;
+    --accent: #7c6cf0;
+    --accent2: #4fd1c5;
+    --me: #2d2a4d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #171527, #121020);
+    -webkit-app-region: drag;
+    user-select: none;
+    flex: 0 0 auto;
+  }
+  header .name {
+    font: 700 13px/1 ui-monospace, "Cascadia Mono", monospace;
+    letter-spacing: .28em; text-transform: uppercase; color: var(--muted);
+  }
+  header .name b { color: var(--accent2); }
+  header .winbtns { display: flex; gap: 6px; -webkit-app-region: no-drag; }
+  header .winbtns button {
+    width: 26px; height: 22px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); border-radius: 6px;
+    cursor: pointer; font-size: 12px; line-height: 1;
+  }
+  header .winbtns button:hover { background: var(--line); color: var(--text); }
+
+  #stage {
+    position: relative; flex: 0 0 auto;
+    height: clamp(240px, 38vh, 460px);
+    background:
+      radial-gradient(ellipse at 50% 25%, #232041 0%, #14121f 55%, #0e0d16 100%);
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+  }
+  #face3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #status {
+    position: absolute; left: 0; right: 0; bottom: 6px;
+    text-align: center; font: 600 12px/1 ui-monospace, monospace;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+    pointer-events: none;
+  }
+  #status .dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent2); margin-right: 7px; vertical-align: middle;
+    box-shadow: 0 0 8px var(--accent2);
+  }
+  #status.busy .dot { background: #ffc857; box-shadow: 0 0 8px #ffc857; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  #log {
+    flex: 1 1 auto; overflow-y: auto; padding: 14px 12px 6px;
+    display: flex; flex-direction: column; gap: 8px;
+    scroll-behavior: smooth;
+  }
+  #log::-webkit-scrollbar { width: 8px; }
+  #log::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+
+  .msg { max-width: 82%; padding: 8px 11px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
+  .msg.me { align-self: flex-end; background: var(--me); border-bottom-right-radius: 4px; }
+  .msg.jarvis { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .msg .who {
+    display: block; font: 700 10px/1 ui-monospace, monospace;
+    letter-spacing: .18em; text-transform: uppercase; margin-bottom: 4px;
+    color: var(--accent2); opacity: .8;
+  }
+  .msg.me .who { color: var(--muted); }
+  .msg.think { align-self: flex-start; color: var(--muted); font-style: italic; background: transparent; border: 1px dashed var(--line); }
+
+  footer {
+    flex: 0 0 auto; display: flex; gap: 8px; align-items: center;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line); background: var(--bg2);
+  }
+  #input {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    border-radius: 20px; padding: 10px 14px; font-size: 15px; outline: none;
+  }
+  #input:focus { border-color: var(--accent); }
+  footer button {
+    flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    cursor: pointer; font-size: 16px; display: grid; place-items: center;
+    transition: transform .08s ease, background .15s ease;
+  }
+  footer button:active { transform: scale(.92); }
+  #send { background: var(--accent); border-color: var(--accent); }
+  #mic.rec { background: #e0455f; border-color: #e0455f; animation: pulse 1s infinite; }
+  #mic:disabled { opacity: .4; cursor: default; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three/three.module.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="name">el<b>a</b>ra</div>
+    <div class="winbtns" id="winbtns" hidden>
+      <button id="btnTop" title="siempre visible">📌</button>
+      <button id="btnMin" title="minimizar">–</button>
+      <button id="btnClose" title="cerrar">✕</button>
+    </div>
+  </header>
+
+  <section id="stage">
+    <canvas id="face3d"></canvas>
+    <div id="status"><span class="dot"></span><span id="statusText">cargando…</span></div>
+  </section>
+
+  <div id="log"></div>
+
+  <footer>
+    <button id="mic" title="mandar nota de voz">🎤</button>
+    <input id="input" placeholder="escribile…" autocomplete="off" maxlength="2000">
+    <button id="send" title="enviar">➤</button>
+  </footer>
+</div>
+
+<script type="module">
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════════
+   1. AVATAR 3D (VRM) — three.js + @pixiv/three-vrm, servidos de
+      /vendor. Emociones por morphs, mirada, respiración, parpadeo y
+      lip-sync con el audio real.
+   ══════════════════════════════════════════════════════════════════ */
+
+import * as THREE from "three";
+import { GLTFLoader } from "/vendor/three/GLTFLoader.js";
+import { VRMLoaderPlugin, VRMUtils } from "/vendor/three/three-vrm.module.min.js";
+
+const MODEL_URL = "/vendor/vrm/AvatarSample_A.vrm";
+
+const stage = document.getElementById("stage");
+const canvas = document.getElementById("face3d");
+const statusEl = document.getElementById("status");
+const statusText = document.getElementById("statusText");
+
+function setStatus(text, isBusy) {
+  statusText.textContent = text;
+  statusEl.classList.toggle("busy", Boolean(isBusy));
+}
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const damp = (a, b, speed, dt) => lerp(a, b, 1 - Math.exp(-speed * dt));
+
+/* ── Renderer + escena ─────────────────────────────────────────── */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+} catch (error) {
+  setStatus("\u26a0\ufe0f WebGL no disponible", true);
+  throw error;
+}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor(0x000000, 0);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(25, 1, 0.05, 30);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+const keyLight = new THREE.DirectionalLight(0xfff1e0, 1.3);
+keyLight.position.set(-0.7, 1.6, 1.4);
+scene.add(keyLight);
+const rimLight = new THREE.DirectionalLight(0x8fd0ff, 0.55);
+rimLight.position.set(0.9, 0.8, -1.2);
+scene.add(rimLight);
+
+// Objeto que mira la modelo (para las sacadas y la mirada).
+const lookTarget = new THREE.Object3D();
+scene.add(lookTarget);
+
+/* ── Estado de la cara ─────────────────────────────────────────── */
+/** Emoci\u00f3n \u2192 pesos de morphs del VRM (presets VRM1; three-vrm mapea los VRM0). */
+const EMOTIONS = {
+  neutral:   {},
+  happy:     { happy: 1 },
+  sad:       { sad: 0.85 },
+  angry:     { angry: 0.9 },
+  shy:       { relaxed: 0.8 },
+  surprised: { surprised: 0.95 },
+};
+
+/** Emoci\u00f3n \u2192 pose sutil de cabeza (radianes). */
+const POSES = {
+  neutral:   { pitch: 0,     yaw: 0,     roll: 0 },
+  happy:     { pitch: -0.04, yaw: 0,     roll: 0 },
+  sad:       { pitch: 0.1,   yaw: 0,     roll: 0.05 },
+  angry:     { pitch: 0.07,  yaw: 0,     roll: -0.05 },
+  shy:       { pitch: 0.14,  yaw: -0.15, roll: 0.04 },
+  surprised: { pitch: -0.11, yaw: 0,     roll: 0 },
+};
+
+const face = {
+  emotion: "neutral",
+  weights: {},                 // peso actual por morph (suavizado)
+  alias: {},                   // preset → nombre real en este modelo
+  pose: { pitch: 0, yaw: 0, roll: 0 },
+  mouth: 0, mouthTarget: 0,    // 0..1 apertura (envelope del audio)
+  visemes: { aa: 1, ih: 0, oh: 0 },
+  blink: 0, blinkPhase: -1, nextBlink: 1600,
+  look: { x: 0, y: 0, tx: 0, ty: 0 }, nextGlance: 2200,
+  speaking: false, thinking: false,
+};
+
+function setEmotion(name) {
+  if (EMOTIONS[name]) face.emotion = name;
+}
+
+function setMouth(v) {
+  face.mouthTarget = clamp(v, 0, 1);
+}
+
+function setSpeaking(on) {
+  face.speaking = on;
+  if (!on) setMouth(0);
+}
+
+function setThinking(on) {
+  face.thinking = on;
+}
+
+/* ── Modelo ──────────────────────────────────────────────────────── */
+let vrm = null;
+let headNode = null, neckNode = null, chestNode = null, spineNode = null;
+let armL = null, forearmL = null, handL = null, shoulderL = null;
+let armR = null, forearmR = null, handR = null, shoulderR = null;
+/** Altura original de los hombros (para que el shrug vuelva al reposo). */
+let shoulderBaseY = null;
+let headY = 1.45;
+
+setStatus("cargando el modelo\u2026", true);
+
+const loader = new GLTFLoader();
+loader.register((parser) => new VRMLoaderPlugin(parser));
+
+loader.load(
+  MODEL_URL,
+  (gltf) => {
+    vrm = gltf.userData.vrm;
+    VRMUtils.removeUnnecessaryVertices(gltf.scene);
+    VRMUtils.combineSkeletons(gltf.scene);
+    VRMUtils.rotateVRM0(vrm);   // los VRM0 miran al fondo: girarlos a c\u00e1mara
+
+    scene.add(vrm.scene);
+    vrm.lookAt.target = lookTarget;
+
+    const box = new THREE.Box3().setFromObject(vrm.scene);
+    if (box.min.y < 0) vrm.scene.position.y -= box.min.y;  // pies al piso
+    vrm.scene.updateMatrixWorld(true);
+
+    headNode = vrm.humanoid?.getNormalizedBoneNode("head") ?? null;
+    neckNode = vrm.humanoid?.getNormalizedBoneNode("neck") ?? null;
+    chestNode = vrm.humanoid?.getNormalizedBoneNode("chest") ?? null;
+    spineNode = vrm.humanoid?.getNormalizedBoneNode("spine") ?? null;
+
+    // Cuerpo: brazos completos (VRM1: leftUpperArm, leftLowerArm, leftHand…).
+    const humanoid = vrm.humanoid;
+    armL = humanoid?.getNormalizedBoneNode("leftUpperArm") ?? null;
+    forearmL = humanoid?.getNormalizedBoneNode("leftLowerArm") ?? null;
+    handL = humanoid?.getNormalizedBoneNode("leftHand") ?? null;
+    shoulderL = humanoid?.getNormalizedBoneNode("leftShoulder") ?? null;
+    armR = humanoid?.getNormalizedBoneNode("rightUpperArm") ?? null;
+    forearmR = humanoid?.getNormalizedBoneNode("rightLowerArm") ?? null;
+    handR = humanoid?.getNormalizedBoneNode("rightHand") ?? null;
+    shoulderR = humanoid?.getNormalizedBoneNode("rightShoulder") ?? null;
+
+    const headWorld = new THREE.Vector3();
+    if (headNode) headNode.getWorldPosition(headWorld);
+    headY = headWorld.y || 1.45;
+
+    measureBody();
+
+    // Alias de presets: este modelo trae "Surprised" con mayúscula, otros
+    // usan minúscula — resolvemos contra los nombres que existan.
+    const names = new Set(
+      vrm.expressionManager.expressions.map((e) => e.expressionName),
+    );
+    for (const k of ["happy", "angry", "sad", "relaxed", "surprised", "blink", "aa", "ih", "oh"]) {
+      if (names.has(k)) face.alias[k] = k;
+      else if (names.has(k.charAt(0).toUpperCase() + k.slice(1))) {
+        face.alias[k] = k.charAt(0).toUpperCase() + k.slice(1);
+      }
+    }
+
+    frameModel();
+    setStatus("en l\u00ednea", false);
+    if (window.__jarvis) window.__jarvis.vrm = vrm;
+  },
+  undefined,
+  (error) => {
+    console.error("[Jarvis] no pude cargar el modelo VRM:", error);
+    setStatus("\u26a0\ufe0f no pude cargar el modelo 3D", true);
+  },
+);
+
+/* ── Medición del cuerpo (vectores reales del esqueleto) ────────── */
+/** Longitudes en metros (para escalar gestos y verificar alcance). */
+let armLenL = 0.26, armLenR = 0.26, forearmLenL = 0.24, forearmLenR = 0.24;
+let shoulderHalf = 0.18;      // media distancia entre hombros
+let chestCenter = null;       // punto del pecho (para handOnChest)
+let headWorldPos = null;      // centro de la cabeza (para facepalm / think)
+
+/**
+ * Mide el esqueleto real cargado: nada de longitudes a ojo. Con estos
+ * vectores el motor de gestos sabe hasta dónde puede llegar cada mano.
+ */
+function measureBody() {
+  const p = (node) => {
+    if (!node) return null;
+    const v = new THREE.Vector3();
+    node.getWorldPosition(v);
+    return v;
+  };
+
+  const shoulderLPos = p(shoulderL ?? armL);
+  const shoulderRPos = p(shoulderR ?? armR);
+  const elbowL = p(forearmL), elbowR = p(forearmR);
+  const handLPos = p(handL), handRPos = p(handR);
+  const headPos = p(headNode) ?? new THREE.Vector3(0, headY, 0);
+
+  if (shoulderLPos && shoulderRPos) {
+    shoulderHalf = Math.max(0.1, shoulderLPos.distanceTo(shoulderRPos) / 2);
+  }
+  if (shoulderLPos && elbowL) armLenL = Math.max(0.15, shoulderLPos.distanceTo(elbowL));
+  if (shoulderRPos && elbowR) armLenR = Math.max(0.15, shoulderRPos.distanceTo(elbowR));
+  if (elbowL && handLPos) forearmLenL = Math.max(0.12, elbowL.distanceTo(handLPos));
+  if (elbowR && handRPos) forearmLenR = Math.max(0.12, elbowR.distanceTo(handRPos));
+
+  // Anclas para gestos: pecho y cabeza, en espacio de la escena.
+  chestCenter = new THREE.Vector3(0, headPos.y - 0.42, 0.06);
+  headWorldPos = headPos.clone();
+
+  console.log(
+    `[Jarvis] cuerpo medido: brazo L ${armLenL.toFixed(3)}m / antebrazo ` +
+    `${forearmLenL.toFixed(3)}m / hombros ±${shoulderHalf.toFixed(3)}m`,
+  );
+}
+
+/** Encuadre: cabeza + hombros, a la altura de los ojos. */
+function frameModel() {
+  const w = stage.clientWidth || 460;
+  const h = stage.clientHeight || 300;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+
+  const visible = 0.58;  // metros visibles en vertical
+  const dist = visible / 2 / Math.tan((camera.fov * Math.PI) / 360);
+  camera.position.set(0, headY + 0.03, dist);
+  camera.lookAt(0, headY - visible * 0.16, 0);
+}
+
+new ResizeObserver(frameModel).observe(stage);
+frameModel();
+
+/** Puntos clave proyectados a pantalla (para scripts/shot-vrm.ts). */
+function frameInfo() {
+  if (!vrm) return null;
+  const puntos = {
+    cabezaArriba: headY + 0.14,
+    mentón: headY - 0.11,
+    hombros: headY - 0.32,
+    pecho: headY - 0.55,
+  };
+  const w = stage.clientWidth;
+  const h = stage.clientHeight;
+  const out = { stage: w + "x" + h };
+  for (const [k, y] of Object.entries(puntos)) {
+    const p = new THREE.Vector3(0, y, 0).project(camera);
+    out[k] = Math.round((-p.y * 0.5 + 0.5) * h) + "px";
+  }
+  return out;
+}
+
+/* ── Animaciones de reposo ───────────────────────────────────── */
+function updateIdle(dt) {
+  // Parpadeo
+  face.nextBlink -= dt * 1000;
+  if (face.blinkPhase < 0 && face.nextBlink <= 0) {
+    face.blinkPhase = 0;
+    face.nextBlink = 2200 + Math.random() * 3600;
+  }
+  if (face.blinkPhase >= 0) {
+    face.blinkPhase += dt * 1000;
+    const p = face.blinkPhase / 150;
+    face.blink = p >= 1 ? ((face.blinkPhase = -1), 0) : Math.sin(p * Math.PI);
+  } else {
+    face.blink = 0;
+  }
+
+  // Sacadas: mira a lados; para arriba si piensa; casi fija si habla.
+  face.nextGlance -= dt * 1000;
+  if (face.nextGlance <= 0) {
+    face.nextGlance = 1800 + Math.random() * 3400;
+    if (face.thinking) {
+      face.look.tx = (Math.random() - 0.5) * 1.4;
+      face.look.ty = 0.5 + Math.random() * 0.5;
+    } else if (face.speaking) {
+      face.look.tx = (Math.random() - 0.5) * 0.5;
+      face.look.ty = (Math.random() - 0.5) * 0.3;
+    } else {
+      face.look.tx = (Math.random() - 0.5) * 1.6;
+      face.look.ty = (Math.random() - 0.5) * 0.9;
+    }
+  }
+  face.look.x = damp(face.look.x, face.look.tx, 3.5, dt);
+  face.look.y = damp(face.look.y, face.look.ty, 3.5, dt);
+}
+
+function updateExpressions(dt) {
+  const target = EMOTIONS[face.emotion] ?? EMOTIONS.neutral;
+  const keys = new Set([...Object.keys(face.weights), ...Object.keys(target)]);
+  for (const k of keys) {
+    face.weights[k] = damp(face.weights[k] ?? 0, target[k] ?? 0, 6, dt);
+  }
+
+  const em = vrm?.expressionManager;
+  if (!em) return;
+  const alias = face.alias;
+  for (const [k, w] of Object.entries(face.weights)) {
+    if (alias[k]) em.setValue(alias[k], w);
+  }
+  if (alias.blink) em.setValue(alias.blink, face.blink);
+  if (alias.aa) em.setValue(alias.aa, face.mouth * face.visemes.aa);
+  if (alias.ih) em.setValue(alias.ih, face.mouth * face.visemes.ih);
+  if (alias.oh) em.setValue(alias.oh, face.mouth * face.visemes.oh);
+}
+
+function updatePose(dt, time) {
+  if (!headNode) return;
+  const target = POSES[face.emotion] ?? POSES.neutral;
+  face.pose.pitch = damp(face.pose.pitch, target.pitch, 4, dt);
+  face.pose.yaw = damp(face.pose.yaw, target.yaw, 4, dt);
+  face.pose.roll = damp(face.pose.roll, target.roll, 4, dt);
+
+  const breath = Math.sin(time * 1.15);
+  const nod = face.speaking
+    ? face.mouth * 0.06 * (0.6 + 0.4 * Math.sin(time * 5.3))
+    : 0;
+
+  if (chestNode) chestNode.rotation.x = -0.015 - breath * 0.012;
+  if (spineNode) {
+    spineNode.rotation.y = Math.sin(time * 0.5) * 0.025;
+    spineNode.rotation.x = 0.01;
+  }
+
+  // Gestos de cabeza (nod/shakeHead) suman sobre la pose base.
+  const headGesture = updateHeadGestures(dt, time);
+
+  headNode.rotation.set(
+    face.pose.pitch + Math.sin(time * 0.9) * 0.012 + nod + headGesture.nodAmp,
+    face.pose.yaw + Math.sin(time * 0.57) * 0.02 + headGesture.shakeAmp,
+    face.pose.roll + Math.sin(time * 0.43) * 0.014,
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   1.bis CUERPO — brazos y cabeza como marioneta de impulsos.
+   Cada gesto es una cola de poses objetivo por hueso; un driver
+   (impulso + gravedad + amortiguación) persigue la pose con física
+   de resorte, así los movimientos se ven vivos y no robóticos.
+   ══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Drivers: para cada canal angular (eje de un hueso) llevamos posición,
+ * velocidad y objetivo. La velocidad es el "impulso" que Jarvis dispara.
+ */
+function makeDriver(speed = 9) {
+  return { pos: 0, vel: 0, target: 0, speed };
+}
+
+/**
+ * Un paso de física de resorte amortiguado hacia el target.
+ * vel acumula el impulso; la amortiguación lo disipa: el brazo "llega"
+ * con suavidad y hasta se pasa un poquito (overshoot natural).
+ */
+function stepDriver(d, dt) {
+  const stiffness = 120 + d.speed * 40;
+  const damping = 2 * Math.sqrt(stiffness) * 0.82;
+  const accel = stiffness * (d.target - d.pos) - damping * d.vel;
+  d.vel += accel * dt;
+  d.pos += d.vel * dt;
+  d.pos = clamp(d.pos, -Math.PI, Math.PI);
+}
+
+/** Rigs de ambos brazos: cada canal tiene su driver. */
+const rig = {
+  L: {
+    shoulderZ: makeDriver(7),   // alzar el brazo lateral (abducción)
+    shoulderX: makeDriver(8),   // brazo adelante/atrás
+    shoulderY: makeDriver(7),   // rotación del brazo sobre su eje
+    elbowY: makeDriver(10),     // flexión del codo
+    handZ: makeDriver(10),      // muñeca
+  },
+  R: {
+    shoulderZ: makeDriver(7),
+    shoulderX: makeDriver(8),
+    shoulderY: makeDriver(7),
+    elbowY: makeDriver(10),
+    handZ: makeDriver(10),
+  },
+};
+
+/** Gesto activo y sus datos. */
+const gestureState = {
+  name: null,
+  t: 0,                 // tiempo dentro del gesto
+  duration: 0,
+  phase: "in",          // in | hold | out
+  nextIdle: 6,          // próximo gesto espontáneo (segundos)
+  queued: [],           // gestos pedidos mientras hay uno activo
+};
+
+/** Duraciones (s) por gesto: entrada, sostén, salida. */
+const GESTURE_TIMING = {
+  wave:        [0.5, 1.6, 0.55],
+  waveBoth:    [0.6, 1.6, 0.6],
+  beckon:      [0.5, 1.4, 0.5],
+  nod:         [0.28, 0.7, 0.4],
+  shakeHead:   [0.3, 0.9, 0.4],
+  shrug:       [0.45, 1.2, 0.55],
+  handOnChest: [0.6, 1.8, 0.7],
+  clap:        [0.4, 1.0, 0.5],
+  think:       [0.7, 2.2, 0.7],
+  stretch:     [0.9, 1.6, 0.9],
+  cheer:       [0.55, 1.4, 0.6],
+  facepalm:    [0.6, 1.4, 0.7],
+  idea:        [0.45, 1.2, 0.5],
+  fist:        [0.4, 1.0, 0.45],
+};
+
+/**
+ * LA POSE: qué ángulos objetivo quiere cada canal para cada gesto.
+ * Signos según el esqueleto VRM1 (brazo izquierdo alza con +Z, derecho
+ * con -Z; codo flexiona en -Y; verificado contra AvatarSample_A).
+ */
+const GESTURE_POSES = {
+  wave: {
+    R: { shoulderZ: -2.25, shoulderX: 0.15, shoulderY: -0.5, elbowY: -0.9, handZ: 0.35 },
+  },
+  waveBoth: {
+    L: { shoulderZ: 2.25, shoulderX: 0.15, shoulderY: 0.5, elbowY: -0.9, handZ: -0.35 },
+    R: { shoulderZ: -2.25, shoulderX: 0.15, shoulderY: -0.5, elbowY: -0.9, handZ: 0.35 },
+  },
+  beckon: {
+    R: { shoulderZ: -1.15, shoulderX: 0.55, shoulderY: 0, elbowY: -1.5, handZ: -0.3 },
+  },
+  handOnChest: {
+    R: { shoulderZ: -0.55, shoulderX: 0.75, shoulderY: -0.6, elbowY: -1.85, handZ: 0 },
+  },
+  clap: {
+    L: { shoulderZ: 0.9, shoulderX: 0.7, shoulderY: 0.35, elbowY: -1.5, handZ: 0 },
+    R: { shoulderZ: -0.9, shoulderX: 0.7, shoulderY: -0.35, elbowY: -1.5, handZ: 0 },
+  },
+  think: {
+    R: { shoulderZ: -1.0, shoulderX: 0.45, shoulderY: -0.35, elbowY: -2.15, handZ: 0.25 },
+  },
+  cheer: {
+    L: { shoulderZ: 2.7, shoulderX: -0.2, shoulderY: 0.2, elbowY: -0.35, handZ: -0.2 },
+    R: { shoulderZ: -2.7, shoulderX: -0.2, shoulderY: -0.2, elbowY: -0.35, handZ: 0.2 },
+  },
+  facepalm: {
+    L: { shoulderZ: 1.35, shoulderX: 0.5, shoulderY: 0.7, elbowY: -2.3, handZ: -0.3 },
+    R: { shoulderZ: -1.35, shoulderX: 0.5, shoulderY: -0.7, elbowY: -2.3, handZ: 0.3 },
+  },
+  idea: {
+    R: { shoulderZ: -1.7, shoulderX: 0.3, shoulderY: -0.25, elbowY: -1.45, handZ: 0.3 },
+  },
+  fist: {
+    R: { shoulderZ: -1.05, shoulderX: 0.85, shoulderY: 0, elbowY: -1.7, handZ: 0 },
+  },
+  shrug: "special",
+  nod: "special",
+  shakeHead: "special",
+  stretch: "special",
+};
+
+/** Dispara un gesto por nombre (encola si ya hay uno en curso). */
+function setGesture(name) {
+  if (!GESTURE_POSES[name]) return;
+  if (gestureState.name && gestureState.phase !== "out") {
+    if (!gestureState.queued.includes(name)) gestureState.queued.push(name);
+    return;
+  }
+  startGesture(name);
+}
+
+function startGesture(name) {
+  const timing = GESTURE_TIMING[name] ?? [0.5, 1.2, 0.5];
+  gestureState.name = name;
+  gestureState.t = 0;
+  gestureState.duration = timing[0] + timing[1] + timing[2];
+  gestureState.phase = "in";
+  gestureState.inDur = timing[0];
+  gestureState.holdDur = timing[1];
+}
+
+/**
+ * Corazón del gestual: aplica la pose objetivo del gesto activo
+ * (o del reposo) a los drivers, con oscilaciones durante el hold.
+ */
+function updateArms(dt, time) {
+  // 1) ¿Qué pose perseguimos ahora?
+  const targets = idleArmTargets(time);
+
+  const g = gestureState;
+  if (g.name) {
+    g.t += dt;
+    const pose = GESTURE_POSES[g.name];
+
+    if (g.t < g.inDur) {
+      g.phase = "in";
+      applyPose(pose, targets, easeOut(g.t / g.inDur));
+    } else if (g.t < g.inDur + g.holdDur) {
+      g.phase = "hold";
+      applyPose(pose, targets, 1, g.name, time);
+    } else if (g.t < g.duration) {
+      g.phase = "out";
+      applyPose(pose, targets, 1 - easeOut((g.t - g.inDur - g.holdDur) / (g.duration - g.inDur - g.holdDur)));
+    } else {
+      // Fin del gesto: siguiente en la cola o reposo.
+      g.name = null;
+      const next = g.queued.shift();
+      if (next) startGesture(next);
+    }
+  }
+
+  // 1.bis) Los targets alimentan a los drivers (impulso hacia la pose).
+  for (const side of ["L", "R"]) {
+    for (const channel of ["shoulderZ", "shoulderX", "shoulderY", "elbowY", "handZ"]) {
+      rig[side][channel].target = targets[side][channel] ?? 0;
+    }
+  }
+
+  // 2) Física de resorte por canal.
+  for (const side of ["L", "R"]) {
+    for (const channel of Object.values(rig[side])) stepDriver(channel, dt);
+  }
+
+  // 3) Impulso a los huesos reales (rest pose de VRM = T-pose).
+  if (armL) {
+    armL.rotation.set(
+      rig.L.shoulderX.pos + targets.L.wobbleX,
+      rig.L.shoulderY.pos,
+      rig.L.shoulderZ.pos,
+    );
+    if (forearmL) forearmL.rotation.set(0, rig.L.elbowY.pos, 0);
+    if (handL) handL.rotation.set(0, 0, rig.L.handZ.pos);
+  }
+  if (armR) {
+    armR.rotation.set(
+      rig.R.shoulderX.pos + targets.R.wobbleX,
+      rig.R.shoulderY.pos,
+      rig.R.shoulderZ.pos,
+    );
+    if (forearmR) forearmR.rotation.set(0, rig.R.elbowY.pos, 0);
+    if (handR) handR.rotation.set(0, 0, rig.R.handZ.pos);
+  }
+  // Encogimiento de hombros (shrug): los hombros se levantan y tras el
+  // gesto vuelven a su altura original (¿+Y? es arriba también en local).
+  if (shoulderL && shoulderR) {
+    if (!shoulderBaseY) shoulderBaseY = { L: shoulderL.position.y, R: shoulderR.position.y };
+    const lift = targets.shoulderLift || 0;
+    shoulderL.position.y = shoulderBaseY.L + (lift.shoulderLY || 0);
+    shoulderR.position.y = shoulderBaseY.R + (lift.shoulderRY || 0);
+  }
+}
+
+/** Objetivos de reposo: brazos caídos con balanceo sutil. */
+function idleArmTargets(time) {
+  const wobbleX = Math.sin(time * 1.1) * 0.03;
+  return {
+    L: {
+      shoulderZ: 0.09, shoulderX: 0.06, shoulderY: -0.06,
+      elbowY: -0.12, handZ: 0, wobbleX: wobbleX,
+    },
+    R: {
+      shoulderZ: -0.09, shoulderX: 0.06, shoulderY: 0.06,
+      elbowY: -0.12, handZ: 0, wobbleX: -wobbleX,
+    },
+    shoulderLift: 0,
+  };
+}
+
+/**
+ * Mezcla la pose del gesto sobre los targets: peso 0..1 según la fase,
+ * con oscilaciones (vibraciones del gesto) durante el hold.
+ */
+function applyPose(pose, targets, weight, gestureName, time) {
+  if (pose === "special") {
+    applySpecialPose(gestureName, targets, weight, time);
+    return;
+  }
+
+  for (const side of ["L", "R"]) {
+    const sidePose = pose[side];
+    if (!sidePose) continue;
+    const dst = targets[side];
+    for (const [channel, angle] of Object.entries(sidePose)) {
+      dst[channel] = lerp(dst[channel], angle, weight);
+    }
+  }
+
+  // Oscilaciones del gesto (el "hay que saludar" de la ola, el aplauso…).
+  if (weight >= 0.99 && gestureName) {
+    applyGestureOscillation(gestureName, targets, time);
+  }
+}
+
+/** Gestos con lógica propia (shrug, nod, shakeHead, stretch). */
+function applySpecialPose(name, targets, weight, time) {
+  if (name === "shrug") {
+    targets.L.shoulderZ = lerp(targets.L.shoulderZ, 0.35, weight);
+    targets.R.shoulderZ = lerp(targets.R.shoulderZ, -0.35, weight);
+    targets.L.elbowY = lerp(targets.L.elbowY, -1.25, weight);
+    targets.R.elbowY = lerp(targets.R.elbowY, -1.25, weight);
+    targets.L.shoulderX = lerp(targets.L.shoulderX, 0.28, weight);
+    targets.R.shoulderX = lerp(targets.R.shoulderX, 0.28, weight);
+    targets.shoulderLift = {
+      shoulderLY: 0.028 * weight,
+      shoulderRY: 0.028 * weight,
+    };
+  } else if (name === "nod") {
+    // El cabeceo se aplica sobre la cabeza en updatePose (ver abajo).
+    targets.nodAmp = weight;
+  } else if (name === "shakeHead") {
+    targets.shakeAmp = weight;
+  } else if (name === "stretch") {
+    targets.L.shoulderZ = lerp(targets.L.shoulderZ, 2.4, weight);
+    targets.R.shoulderZ = lerp(targets.R.shoulderZ, -2.4, weight);
+    targets.L.elbowY = lerp(targets.L.elbowY, -0.15, weight);
+    targets.R.elbowY = lerp(targets.R.elbowY, -0.15, weight);
+    targets.L.shoulderX = lerp(targets.L.shoulderX, -0.15, weight);
+    targets.R.shoulderX = lerp(targets.R.shoulderX, -0.15, weight);
+  }
+}
+
+/** Micro-movimientos durante el hold: cada gesto tiene su firma. */
+function applyGestureOscillation(name, targets, time) {
+  const g = gestureState;
+  const local = g.t - g.inDur;   // tiempo dentro del hold
+
+  switch (name) {
+    case "wave":
+    case "waveBoth": {
+      const s = Math.sin(local * 9);
+      if (name === "wave" || poseHasSide(name, "R")) targets.R.elbowY += s * 0.32;
+      if (name === "waveBoth" || poseHasSide(name, "L")) targets.L.elbowY += s * 0.32;
+      break;
+    }
+    case "beckon": {
+      targets.R.elbowY += Math.sin(local * 7.5) * 0.28;
+      break;
+    }
+    case "clap": {
+      const s = Math.abs(Math.sin(local * 6.5));
+      targets.L.shoulderX -= s * 0.22;
+      targets.R.shoulderX -= s * 0.22;
+      targets.L.elbowY += s * 0.35;
+      targets.R.elbowY += s * 0.35;
+      break;
+    }
+    case "cheer": {
+      targets.L.elbowY += Math.sin(local * 5.5) * 0.15;
+      targets.R.elbowY += Math.sin(local * 5.5 + 1) * 0.15;
+      break;
+    }
+    case "idea": {
+      targets.R.shoulderX += Math.sin(local * 4.5) * 0.06;
+      break;
+    }
+    case "fist": {
+      targets.R.shoulderX += Math.sin(local * 6) * 0.07;
+      break;
+    }
+    case "think": {
+      targets.R.shoulderX += Math.sin(local * 1.5) * 0.03;
+      break;
+    }
+  }
+}
+
+function poseHasSide(name, side) {
+  const pose = GESTURE_POSES[name];
+  return Boolean(pose && pose[side]);
+}
+
+const easeOut = (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+
+/**
+ * Gestos que involucran cabeza: se suman en updatePose.
+ * Los declaramos como extensible global para no tocar la firma.
+ */
+function updateHeadGestures(dt, time) {
+  const g = gestureState;
+  let nodAmp = 0;
+  let shakeAmp = 0;
+
+  const env = g.t < g.inDur ? easeOut(g.t / g.inDur)
+    : g.t < g.inDur + g.holdDur ? 1
+    : 1 - easeOut((g.t - g.inDur - g.holdDur) / Math.max(0.01, g.duration - g.inDur - g.holdDur));
+
+  if (g.name === "nod") {
+    // 2-3 cabeceos: seno con envolvente in/hold/out.
+    nodAmp = Math.sin(g.t * 8.5) * 0.18 * env;
+  } else if (g.name === "shakeHead") {
+    shakeAmp = Math.sin(g.t * 6.5) * 0.3 * env;
+  }
+
+  return { nodAmp, shakeAmp };
+}
+
+/** Gestos espontáneos cuando lleva rato sin hablar (idle). */
+function updateGestureIdle(dt, speaking) {
+  const g = gestureState;
+  if (g.name) return;
+
+  g.nextIdle -= dt;
+  if (g.nextIdle > 0) return;
+
+  g.nextIdle = 9 + Math.random() * 14;
+  if (speaking) return;
+
+  // Solo gestos chicos y callados cuando está en reposo.
+  const quiet = ["think", "stretch", "shrug", "wave"];
+  setGesture(quiet[Math.floor(Math.random() * quiet.length)]);
+}
+
+/* ── Loop principal ────────────────────────────────────────────── */
+const clock = new THREE.Clock();
+
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const time = clock.elapsedTime;
+
+  face.mouth = damp(face.mouth, face.mouthTarget, 22, dt);
+
+  updateIdle(dt);
+  updateExpressions(dt);
+  updatePose(dt, time);
+  updateArms(dt, time);
+  updateGestureIdle(dt, face.speaking);
+
+  lookTarget.position.set(
+    face.look.x * 0.55,
+    headY + 0.06 + face.look.y * 0.32,
+    1.1,
+  );
+
+  if (vrm) vrm.update(dt);
+  renderer.render(scene, camera);
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   2. VOZ — reproduce la respuesta y sincroniza los labios con el audio
+   ══════════════════════════════════════════════════════════════════ */
+
+let audioCtx = null;
+let analyser = null;
+let timeData = null;
+let freqData = null;
+let currentAudio = null;
+let synthTimer = null;
+
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.55;
+    timeData = new Uint8Array(analyser.fftSize);
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+    analyser.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === "suspended") void audioCtx.resume();
+  return audioCtx;
+}
+
+/** Nivel de apertura de boca + mezcla de visemas a partir del audio real. */
+function audioMouth() {
+  if (!analyser) return { level: 0, low: 0, high: 0 };
+  analyser.getByteTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) {
+    const v = (timeData[i] - 128) / 128;
+    sum += v * v;
+  }
+  const rms = Math.sqrt(sum / timeData.length);
+  const level = clamp((rms - 0.02) * 6, 0, 1);
+
+  analyser.getByteFrequencyData(freqData);
+  const band = (a, b) => {
+    const end = Math.min(b, freqData.length);
+    let s = 0;
+    for (let i = a; i < end; i++) s += freqData[i];
+    return s / Math.max(1, end - a) / 255;
+  };
+  return { level, low: band(2, 10), high: band(24, 80) };
+}
+
+function playReplyAudio(base64, emotion) {
+  stopSyntheticMouth();
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+
+  setEmotion(emotion || "neutral");
+
+  if (!base64) {
+    // Sin audio: la boca igual se mueve con un envelope inventado.
+    startSyntheticMouth();
+    return;
+  }
+
+  const ctxAudio = ensureAudio();
+  const el = new Audio("data:audio/wav;base64," + base64);
+  currentAudio = el;
+
+  if (ctxAudio) {
+    try {
+      const src = ctxAudio.createMediaElementSource(el);
+      src.connect(analyser);
+    } catch {
+      // Ya estaba conectado (mismo elemento reusado): seguir.
+    }
+  }
+
+  setSpeaking(true);
+  setStatus("hablando", true);
+
+  el.onended = () => {
+    setSpeaking(false);
+    setMouth(0);
+    setEmotion("neutral");
+    setStatus("en línea", false);
+    currentAudio = null;
+  };
+
+  el.onerror = () => {
+    setSpeaking(false);
+    startSyntheticMouth();
+    setStatus("en línea", false);
+  };
+
+  void el.play().catch(() => {
+    // Autoplay bloqueado (aún no hubo gesto del usuario).
+    setSpeaking(false);
+    startSyntheticMouth();
+  });
+
+  const tick = () => {
+    if (currentAudio !== el || el.ended) return;
+    const { level, low, high } = audioMouth();
+    setMouth(level);
+    face.visemes.aa = clamp(0.55 + low * 0.9, 0, 1);
+    face.visemes.ih = high * 0.65;
+    face.visemes.oh = low * 0.55;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/** Boca sintética: se mueve como si hablara, con ritmo de sílabas. */
+function startSyntheticMouth() {
+  stopSyntheticMouth();
+  setSpeaking(true);
+  setStatus("hablando", true);
+  let t = 0;
+  synthTimer = setInterval(() => {
+    t += 1;
+    setMouth(Math.abs(Math.sin(t * 0.55)) * (0.5 + Math.random() * 0.5));
+    const r = Math.random();
+    if (r < 0.6) face.visemes = { aa: 1, ih: 0, oh: 0 };
+    else if (r < 0.8) face.visemes = { aa: 0.4, ih: 0.9, oh: 0 };
+    else face.visemes = { aa: 0.4, ih: 0, oh: 0.9 };
+  }, 70);
+}
+
+function stopSyntheticMouth() {
+  if (synthTimer) { clearInterval(synthTimer); synthTimer = null; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   3. CHAT
+   ══════════════════════════════════════════════════════════════════ */
+
+const log = document.getElementById("log");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const micBtn = document.getElementById("mic");
+
+let busy = false;
+let ownReplyInFlight = false;
+let lastOwnReply = null;
+
+function addMessage(who, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + (who === "me" ? "me" : "jarvis");
+  if (who !== "me") {
+    const who1 = document.createElement("span");
+    who1.className = "who";
+    who1.textContent = "jarvis";
+    el.appendChild(who1);
+  }
+  el.appendChild(document.createTextNode(text));
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+function addTyping() {
+  const el = document.createElement("div");
+  el.className = "msg think";
+  el.textContent = "escribiendo…";
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+async function send(text) {
+  const value = (text || "").trim();
+  if (!value || busy) return;
+
+  busy = true;
+  input.value = "";
+  addMessage("me", value);
+
+  const typing = addTyping();
+  setThinking(true);
+  setStatus("pensando", true);
+  ownReplyInFlight = true;
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: value }),
+    });
+    const data = await res.json();
+    ownReplyInFlight = false;
+    typing.remove();
+
+    if (!data.ok) throw new Error(data.error || "error");
+
+    lastOwnReply = { text: data.reply.display, at: Date.now() };
+    addMessage("jarvis", data.reply.display);
+    setThinking(false);
+    if (data.reply.gesture) setGesture(data.reply.gesture);
+    playReplyAudio(data.reply.audio, data.reply.emotion);
+  } catch (error) {
+    ownReplyInFlight = false;
+    typing.remove();
+    setThinking(false);
+    setEmotion("shy");
+    addMessage("jarvis", "Se me cruzaron los cables un segundo. Probá de nuevo, que ya estoy");
+    setStatus("en línea", false);
+    console.error("[Jarvis]", error);
+  } finally {
+    busy = false;
+    input.focus();
+  }
+}
+
+sendBtn.addEventListener("click", () => send(input.value));
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send(input.value);
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   4. NOTA DE VOZ (micrófono → Whisper → chat)
+   ══════════════════════════════════════════════════════════════════ */
+
+let recorder = null;
+let recStream = null;
+let recChunks = [];
+
+micBtn.addEventListener("click", async () => {
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+    return;
+  }
+
+  try {
+    recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    addMessage("jarvis", "no me dejaste usar el micrófono 😅");
+    return;
+  }
+
+  recChunks = [];
+  recorder = new MediaRecorder(recStream);
+  recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+  recorder.onstop = async () => {
+    micBtn.classList.remove("rec");
+    setStatus("pensando", true);
+    setThinking(true);
+    try {
+      const blob = new Blob(recChunks, { type: recorder.mimeType || "audio/webm" });
+      const buf = await blob.arrayBuffer();
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audio: arrayBufferToBase64(buf),
+          ext: (recorder.mimeType || "audio/webm").includes("ogg") ? "ogg" : "webm",
+        }),
+      });
+      const data = await res.json();
+      setThinking(false);
+      if (data.ok && data.text) {
+        await send(data.text);
+      } else {
+        setStatus("en línea", false);
+        setThinking(false);
+        addMessage("jarvis", "no te escuché bien, repetime 🙈");
+      }
+    } catch (e) {
+      setThinking(false);
+      setStatus("en línea", false);
+      console.error("[Jarvis] transcripción:", e);
+    } finally {
+      recStream?.getTracks().forEach((t) => t.stop());
+      recStream = null;
+    }
+  };
+  recorder.start();
+  micBtn.classList.add("rec");
+  setStatus("escuchando", true);
+  setEmotion("neutral");
+});
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   5. EVENTOS DEL SERVIDOR (respuestas que nacen en la terminal, etc.)
+   ══════════════════════════════════════════════════════════════════ */
+
+const events = new EventSource("/events");
+
+const EXPRESSION_MAP = {
+  f00: "neutral", f01: "angry", f03: "shy", f04: "happy", f05: "surprised", f07: "sad",
+  neutral: "neutral", happy: "happy", sad: "sad", angry: "angry",
+  shy: "shy", surprised: "surprised",
+};
+
+events.onmessage = (e) => {
+  let ev;
+  try { ev = JSON.parse(e.data); } catch { return; }
+
+  if (ev.type === "reply") {
+    // La respuesta a NUESTRO mensaje llega por el fetch; la del SSE es la
+    // misma, así que la ignoramos (por las dudas, comparamos el texto).
+    if (ownReplyInFlight) { ownReplyInFlight = false; return; }
+    if (
+      lastOwnReply &&
+      ev.text === lastOwnReply.text &&
+      Date.now() - lastOwnReply.at < 4000
+    ) return;
+    if (busy) return;
+
+    // Nació en la terminal: la mostramos y la escuchamos acá.
+    addMessage("jarvis", ev.text);
+    if (ev.gesture) setGesture(ev.gesture);
+    playReplyAudio(ev.audio || null, ev.emotion);
+  } else if (ev.type === "status") {
+    if (ev.status === "thinking") { setThinking(true); setStatus("pensando", true); }
+    if (ev.status === "idle") { setThinking(false); if (!face.speaking) setStatus("en línea", false); }
+    if (ev.status === "speaking") setStatus("hablando", true);
+  } else if (ev.type === "expression") {
+    // Códigos de Live2D (f00…) o nombres directos.
+    const name = EXPRESSION_MAP[ev.expression];
+    if (name) setEmotion(name);
+  } else if (ev.type === "speak") {
+    if (ev.on) { setSpeaking(true); setStatus("hablando", true); }
+    else { setSpeaking(false); setMouth(0); setStatus("en línea", false); }
+  } else if (ev.type === "gesture") {
+    setGesture(ev.gesture);
+  }
+};
+
+events.onerror = () => {
+  setStatus("conectando…", true);
+};
+
+/* ══════════════════════════════════════════════════════════════════
+   6. BOTONES DE VENTANA (solo dentro de Electron)
+   ══════════════════════════════════════════════════════════════════ */
+
+if (window.jarvisDesktop && window.jarvisDesktop.isDesktop) {
+  document.getElementById("winbtns").hidden = false;
+  document.getElementById("btnMin").onclick = () => window.jarvisDesktop.minimize();
+  document.getElementById("btnClose").onclick = () => window.jarvisDesktop.close();
+  let top = false;
+  document.getElementById("btnTop").onclick = (e) => {
+    top = !top;
+    window.jarvisDesktop.setAlwaysOnTop(top);
+    e.currentTarget.style.opacity = top ? "1" : ".5";
+  };
+}
+
+// Primer mensaje de bienvenida cuando no hay nadie escribiendo.
+if (!log.children.length) {
+  const el = addMessage("jarvis", "Jarvis en línea. Escribime o apretá el micrófono");
+  el.style.opacity = "0.9";
+}
+
+input.focus();
+
+// Para debug desde la consola (y desde scripts/shot-vrm.ts).
+window.__jarvis = {
+  vrm, face, send, setEmotion, setMouth, playReplyAudio, frameInfo,
+  setGesture, rig, gestureState, measureBody,
+};
+</script>
+</body>
+</html>

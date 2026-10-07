@@ -1,4 +1,4 @@
-# Migrar Elara a Google Cloud (VM gratis e2-micro, 24/7)
+# Migrar Jarvis a Google Cloud (VM gratis e2-micro, 24/7)
 
 Fly.io en trial apaga la máquina a los 5 minutos. Google Cloud tiene una VM
 **"Always Free"** que corre 24/7 **sin vencimiento**: la `e2-micro` (1 GB RAM,
@@ -28,7 +28,7 @@ la VM free no genera cargos (y además te dan USD 300 de crédito para probar).
 1. Menú ☰ → **Compute Engine → VM instances** → **Create instance**
    (la primera vez te pide habilitar la API: **Enable** y esperar ~1 min).
 2. Configuración:
-   - **Name**: `elara`
+   - **Name**: `jarvis`
    - **Region**: `us-east1 (South Carolina)` o `us-central1 (Iowa)` —
      ⚠️ son las únicas regiones con la e2-micro en "Always Free"
    - **Machine type**: `e2-micro` (2 vCPU compartidas, 1 GB RAM)
@@ -39,7 +39,7 @@ la VM free no genera cargos (y además te dan USD 300 de crédito para probar).
 
 > 🔑 La clave pública ya la generamos en tu compu. Para verla de nuevo:
 > ```bash
-> cat ~/.ssh/gcp_elara.pub
+> cat ~/.ssh/gcp_jarvis.pub
 > ```
 > Es la línea `ssh-ed25519 AAAA... ubuntu` (el comentario `ubuntu` es clave:
 > hace que el usuario SSH sea `ubuntu` automáticamente).
@@ -53,7 +53,7 @@ la VM free no genera cargos (y además te dan USD 300 de crédito para probar).
    Si ya creaste la VM sin el script, también sirve: la e2-micro ejecuta el
    startup script en el próximo reinicio. O corrélo a mano:
    ```bash
-   ssh -i ~/.ssh/gcp_elara ubuntu@LA_IP 'sudo bash -s' < deploy/gcp-setup.sh
+   ssh -i ~/.ssh/gcp_jarvis ubuntu@LA_IP 'sudo bash -s' < deploy/gcp-setup.sh
    ```
 
 ## 4. Entrar por SSH y terminar el deploy
@@ -62,23 +62,23 @@ El script tarda ~3-5 min (instala Node, ffmpeg, clona, compila). Podés mirar
 el progreso con:
 
 ```bash
-ssh -i ~/.ssh/gcp_elara ubuntu@LA_IP tail -f /var/log/elara-setup.log
+ssh -i ~/.ssh/gcp_jarvis ubuntu@LA_IP tail -f /var/log/jarvis-setup.log
 ```
 
-Cuando diga `Setup de Elara: terminado`, cargá las claves del bot (esto va
+Cuando diga `Setup de Jarvis: terminado`, cargá las claves del bot (esto va
 desde tu compu, con tu IP real):
 
 ```bash
-scp -i ~/.ssh/gcp_elara .env ubuntu@LA_IP:/tmp/elara.env
-ssh -i ~/.ssh/gcp_elara ubuntu@LA_IP 'sudo bash -s' < deploy/vm-setup.sh
+scp -i ~/.ssh/gcp_jarvis .env ubuntu@LA_IP:/tmp/jarvis.env
+ssh -i ~/.ssh/gcp_jarvis ubuntu@LA_IP 'sudo bash -s' < deploy/vm-setup.sh
 ```
 
 Ese segundo script instala el `.env`, compila lo que falte, crea el servicio
-`systemd` y **arranca Elara** mostrándote los logs al final. Deberías ver:
+`systemd` y **arranca Jarvis** mostrándote los logs al final. Deberías ver:
 
 ```
-✅ Elara corriendo. Logs: journalctl -u elara -f
-🤖 Elara está en Telegram como @Elara1238_bot.
+✅ Jarvis corriendo. Logs: journalctl -u jarvis -f
+🤖 Jarvis está en Telegram como @Jarvis1238_bot.
 ```
 
 Escribile por Telegram para confirmar. 🎉
@@ -89,14 +89,14 @@ Escribile por Telegram para confirmar. 🎉
 
 | Qué                  | Comando                                                                 |
 | -------------------- | ----------------------------------------------------------------------- |
-| Ver logs en vivo     | `ssh -i ~/.ssh/gcp_elara ubuntu@IP journalctl -u elara -f`              |
-| Reiniciar el bot     | `ssh -i ~/.ssh/gcp_elara ubuntu@IP sudo systemctl restart elara`        |
+| Ver logs en vivo     | `ssh -i ~/.ssh/gcp_jarvis ubuntu@IP journalctl -u jarvis -f`              |
+| Reiniciar el bot     | `ssh -i ~/.ssh/gcp_jarvis ubuntu@IP sudo systemctl restart jarvis`        |
 | Estado de la VM      | consola GCP → Compute Engine (o `gcloud compute instances list`)        |
-| Actualizar el código | `ssh -i ~/.ssh/gcp_elara ubuntu@IP 'cd /opt/elara && sudo git pull && sudo npm install && sudo npm run build && sudo systemctl restart elara'` |
+| Actualizar el código | `ssh -i ~/.ssh/gcp_jarvis ubuntu@IP 'cd /opt/jarvis && sudo git pull && sudo npm install && sudo npm run build && sudo systemctl restart jarvis'` |
 
 > ⚠️ La VM free tiene 30 GB de disco estándar gratis. **No la apagues desde la
 > consola** pensando que "ahorra" — en free tier da igual, y al apagarla
-> tendrías que volver a prenderla para que Elara responda.
+> tendrías que volver a prenderla para que Jarvis responda.
 
 ## Si algo falla
 

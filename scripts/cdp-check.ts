@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 const url = process.argv[2] ?? "http://localhost:4321";
 const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const userDataDir = mkdtempSync(join(tmpdir(), "elara-check-"));
+const userDataDir = mkdtempSync(join(tmpdir(), "jarvis-check-"));
 
 const chrome = spawn(chromePath, [
   "--headless=new",
@@ -87,8 +87,8 @@ try {
   // Test 1: ¿el canvas visible tiene píxeles que difieren del fondo?
   const canvasCheck = await send("Runtime.evaluate", {
     expression: `(() => {
-      const e = window.__elara;
-      if (!e) return "sin __elara (modelo no cargado)";
+      const e = window.__jarvis;
+      if (!e) return "sin __jarvis (modelo no cargado)";
       const src = e.app.view;
       const c = document.createElement("canvas");
       c.width = src.width; c.height = src.height;
@@ -122,7 +122,7 @@ try {
   // Test 2: forzar un render y volver a leer
   const forced = await send("Runtime.evaluate", {
     expression: `(() => {
-      const e = window.__elara;
+      const e = window.__jarvis;
       e.app.render();
       const src = e.app.view;
       const c = document.createElement("canvas");
@@ -141,8 +141,8 @@ try {
   console.log("FORCED:", forced.result?.value);
 
   const shot = await send("Page.captureScreenshot", { format: "png" });
-  writeFileSync("elara-canvas-check.png", Buffer.from(shot.data, "base64"));
-  console.log("screenshot: elara-canvas-check.png");
+  writeFileSync("jarvis-canvas-check.png", Buffer.from(shot.data, "base64"));
+  console.log("screenshot: jarvis-canvas-check.png");
 
   console.log("CONSOLA:");
   for (const m of consoleMsgs) console.log("  ", m);

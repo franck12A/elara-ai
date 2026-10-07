@@ -3,7 +3,7 @@ import { validateConfig } from "../src/config.js";
 import { VoiceService } from "../src/voice/voice.service.js";
 
 const TEST_TEXT =
-  "Hola, soy Elara. Estoy hablando frente a la camara. " +
+  "Hola, soy Jarvis. Estoy hablando frente a la camara. " +
   "Esta es una prueba de lip sync para ver que tan natural se ve.";
 
 async function main(): Promise<void> {

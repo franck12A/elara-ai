@@ -10,7 +10,7 @@ export interface ToolSchema {
   required: string[];
 }
 
-export interface ElaraTool {
+export interface JarvisTool {
   name: string;
   description: string;
   parameters: ToolSchema;

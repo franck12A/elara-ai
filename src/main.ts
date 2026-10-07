@@ -2,16 +2,45 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
 import { validateConfig } from "./config.js";
-import { Elara } from "./elara.js";
+import { Jarvis } from "./jarvis.js";
+import { reminderFirePrompt } from "./ai/reminders.js";
 import { VoiceService } from "./voice/voice.service.js";
 import { playAudio } from "./voice/audio-player.js";
+import { transcribeAudio } from "./voice/audio-tools.js";
 import { FaceService } from "./face/face.service.js";
+import { JarvisSession, base64ToBuffer } from "./session.js";
 
 const config = validateConfig();
 
-const elara = new Elara(config);
+const jarvis = new Jarvis(config);
 const voice = new VoiceService(config.elevenlabs);
-const face = new FaceService();
+
+// La ventana (Electron/navegador) entra por la misma sesión que la terminal.
+let session: JarvisSession | undefined;
+
+const face = new FaceService({
+  onChat: (text) => sessionRef().send(text),
+  onTranscribe: (audio, extension) => transcribeAudio(audio, extension),
+});
+
+session = new JarvisSession(jarvis, voice, face);
+
+// Los recordatorios los entrega este canal: avisa en la terminal/ventana y
+// habla si nadie está mirando la cara.
+jarvis.reminders.start((reminder, overdueMs) => {
+  void (async () => {
+    console.log(`⏰ Recordatorio: ${reminder.message}`);
+    const reply = await sessionRef().send(
+      reminderFirePrompt(reminder, overdueMs),
+    );
+    await speakIfAlone(reply.audio);
+  })();
+});
+
+function sessionRef(): JarvisSession {
+  if (!session) throw new Error("Jarvis todavía no arrancó.");
+  return session;
+}
 
 const readline = createInterface({
   input,
@@ -19,10 +48,10 @@ const readline = createInterface({
 });
 
 async function main(): Promise<void> {
-  await elara.initialize();
+  await jarvis.initialize();
   await face.start();
 
-  console.log("🤖 Elara está despierta.");
+  console.log("🤖 Jarvis en línea.");
   console.log("Escribí 'salir' para cerrar la conversación.\n");
 
   while (true) {
@@ -30,14 +59,16 @@ async function main(): Promise<void> {
 
     try {
       message = await readline.question("Tú: ");
-    } catch {
+    } catch (error) {
       // stdin cerrado (EOF): salir con gracia.
+      if ((error as NodeJS.ErrnoException)?.code !== "ERR_USE_AFTER_CLOSE") {
+        console.error("❌ Error leyendo la entrada:", error);
+      }
       break;
     }
 
     if (message.trim().toLowerCase() === "salir") {
-      console.log("\n🤖 Elara: Nos vemos bro 👋");
-      await face.stop();
+      console.log("\n🤖 Jarvis: Hasta luego, Fran.");
       break;
     }
 
@@ -45,34 +76,72 @@ async function main(): Promise<void> {
       continue;
     }
 
-    try {    const response = await elara.chat(message);
-
-    // Los tags de emoción ([excited], etc.) los interpretan ElevenLabs v3
-    // y la cara de Elara, pero no deben mostrarse en la terminal.
-    const displayText = response.replace(/\[[^\]]+\]/g, "").trim();
-
-    face.expressFromText(response);
-    console.log(`Elara: ${displayText}\n`);
-
-    console.log("🔊 Elara está hablando...");
-
-    face.startSpeaking();
-
     try {
-      const audio = await voice.generateSpeech(response);
-      await playAudio(audio);
-    } finally {
-      face.stopSpeaking();
-    }
+      const reply = await sessionRef().send(message);
+      console.log(`Jarvis: ${reply.display}\n`);
+
+      await speakIfAlone(reply.audio);
     } catch (error) {
-      console.error("❌ Error al hablar con Elara:", error);
+      console.error("❌ Error al hablar con Jarvis:", error);
+      // Él corta la charla con estilo, no con un stack trace.
+      console.log(
+        "Jarvis: Se me cruzaron los cables un segundo. Probá de nuevo, que ya estoy.\n",
+      );
     }
   }
 
   readline.close();
+
+  // Cerramos la ventana/servidor y dejamos la conversación guardada antes de
+  // que el proceso termine (si no, el guardado programado se pierde).
+  await face.stop();
+  await jarvis.flush();
 }
 
-main().catch((error: unknown) => {
-  console.error("❌ Error inesperado:", error);
-  readline.close();
-});
+/**
+ * Si hay ventana, el audio lo reproduce ella (y anima la boca en tiempo real).
+ * Si no hay nadie mirando, lo escuchamos en la terminal como hasta ahora.
+ */
+async function speakIfAlone(audioBase64: string | undefined): Promise<void> {
+  if (face.hasViewers()) return;
+
+  if (!audioBase64) {
+    console.log("🔇 Sin voz esta vez (ElevenLabs no respondió).");
+    return;
+  }
+
+  console.log("🔊 Jarvis está hablando...");
+  face.startSpeaking();
+
+  try {
+    await playAudio(base64ToBuffer(audioBase64));
+  } catch (error) {
+    console.warn("⚠️  No pude reproducir el audio:", error);
+  } finally {
+    face.stopSpeaking();
+  }
+}
+
+main()
+  .then(() => exitSoon(0))
+  .catch((error: unknown) => {
+    console.error("❌ Error inesperado:", error);
+    readline.close();
+    exitSoon(1);
+  });
+
+/** Sale dejando que stdout termine de escribir (si no se pierde el adiós). */
+function exitSoon(code: number): void {
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    process.exit(code);
+  };
+
+  const timer = setTimeout(finish, 1000);
+  process.stdout.write("", () => {
+    clearTimeout(timer);
+    finish();
+  });
+}

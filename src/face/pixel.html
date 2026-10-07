@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jarvis</title>
+<style>
+  :root {
+    --bg: #0c0c12;
+    --bg2: #14131f;
+    --panel: #1a1828;
+    --line: #2b2743;
+    --text: #e9e6ff;
+    --muted: #8f89b8;
+    --accent: #7c6cf0;
+    --accent2: #4fd1c5;
+    --me: #2d2a4d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #171527, #121020);
+    -webkit-app-region: drag;
+    user-select: none;
+    flex: 0 0 auto;
+  }
+  header .name {
+    font: 700 13px/1 ui-monospace, "Cascadia Mono", monospace;
+    letter-spacing: .28em; text-transform: uppercase; color: var(--muted);
+  }
+  header .name b { color: var(--accent2); }
+  header .winbtns { display: flex; gap: 6px; -webkit-app-region: no-drag; }
+  header .winbtns button {
+    width: 26px; height: 22px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); border-radius: 6px;
+    cursor: pointer; font-size: 12px; line-height: 1;
+  }
+  header .winbtns button:hover { background: var(--line); color: var(--text); }
+
+  #stage {
+    position: relative; flex: 0 0 auto;
+    background:
+      radial-gradient(ellipse at 50% 25%, #232041 0%, #14121f 55%, #0e0d16 100%);
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+    padding: 6px 0 2px;
+  }
+  #face { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+
+  #status {
+    position: absolute; left: 0; right: 0; bottom: 6px;
+    text-align: center; font: 600 12px/1 ui-monospace, monospace;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+    pointer-events: none;
+  }
+  #status .dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent2); margin-right: 7px; vertical-align: middle;
+    box-shadow: 0 0 8px var(--accent2);
+  }
+  #status.busy .dot { background: #ffc857; box-shadow: 0 0 8px #ffc857; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  #log {
+    flex: 1 1 auto; overflow-y: auto; padding: 14px 12px 6px;
+    display: flex; flex-direction: column; gap: 8px;
+    scroll-behavior: smooth;
+  }
+  #log::-webkit-scrollbar { width: 8px; }
+  #log::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+
+  .msg { max-width: 82%; padding: 8px 11px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
+  .msg.me { align-self: flex-end; background: var(--me); border-bottom-right-radius: 4px; }
+  .msg.jarvis { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .msg .who {
+    display: block; font: 700 10px/1 ui-monospace, monospace;
+    letter-spacing: .18em; text-transform: uppercase; margin-bottom: 4px;
+    color: var(--accent2); opacity: .8;
+  }
+  .msg.me .who { color: var(--muted); }
+  .msg.think { align-self: flex-start; color: var(--muted); font-style: italic; background: transparent; border: 1px dashed var(--line); }
+
+  footer {
+    flex: 0 0 auto; display: flex; gap: 8px; align-items: center;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line); background: var(--bg2);
+  }
+  #input {
+    flex: 1 1 auto; min-width: 0;
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    border-radius: 20px; padding: 10px 14px; font-size: 15px; outline: none;
+  }
+  #input:focus { border-color: var(--accent); }
+  footer button {
+    flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    cursor: pointer; font-size: 16px; display: grid; place-items: center;
+    transition: transform .08s ease, background .15s ease;
+  }
+  footer button:active { transform: scale(.92); }
+  #send { background: var(--accent); border-color: var(--accent); }
+  #mic.rec { background: #e0455f; border-color: #e0455f; animation: pulse 1s infinite; }
+  #mic:disabled { opacity: .4; cursor: default; }
+
+  .hint { color: var(--muted); font-size: 12px; text-align: center; padding: 0 12px 8px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="name">el<b>a</b>ra</div>
+    <div class="winbtns" id="winbtns" hidden>
+      <button id="btnTop" title="siempre visible">📌</button>
+      <button id="btnMin" title="minimizar">–</button>
+      <button id="btnClose" title="cerrar">✕</button>
+    </div>
+  </header>
+
+  <section id="stage">
+    <canvas id="face"></canvas>
+    <div id="status"><span class="dot"></span><span id="statusText">en línea</span></div>
+  </section>
+
+  <div id="log"></div>
+
+  <footer>
+    <button id="mic" title="mandar nota de voz">🎤</button>
+    <input id="input" placeholder="escribile…" autocomplete="off" maxlength="2000">
+    <button id="send" title="enviar">➤</button>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════════
+   1. CARA PIXELADA — dibujada por código en un canvas chiquito y
+      escalada con vecino más cercano para que se vea pixel art.
+   ══════════════════════════════════════════════════════════════════ */
+
+const W = 96, H = 88;
+
+const P = {
+  outline:  "#241d38",
+  skin:     "#ffd9c2",
+  skinSh:   "#f0b79d",
+  skinDk:   "#e2a48b",
+  hair:     "#6a5aa8",
+  hairLt:   "#8a7ad0",
+  hairDk:   "#463a78",
+  white:    "#ffffff",
+  iris:     "#54d6c9",
+  irisDk:   "#2b8f89",
+  pupil:    "#1b2333",
+  blush:    "#ff9aa8",
+  cloth:    "#241f3d",
+  clothLt:  "#332c57",
+  mouth:    "#8a3b52",
+  tongue:   "#e06a7d",
+  teeth:    "#fff6f2",
+};
+
+const canvas = document.getElementById("face");
+const ctx = canvas.getContext("2d");
+const layer = document.createElement("canvas");
+layer.width = W; layer.height = H;
+const g = layer.getContext("2d");
+
+/** Expresiones: qué tanto se abre cada cosa. */
+const EMOTIONS = {
+  neutral:   { brow: 0,  browTilt: 0,    eye: 1,    smile: 0.35, blush: 0.15, wide: 0,   away: 0 },
+  happy:     { brow: -1, browTilt: 0,    eye: 0.92, smile: 1,    blush: 0.4,  wide: 0,   away: 0 },
+  sad:       { brow: 1,  browTilt: 0.9,  eye: 0.78, smile: -0.8, blush: 0.1,  wide: 0,   away: 0.3 },
+  angry:     { brow: 1.5, browTilt: -1,  eye: 0.72, smile: -0.5, blush: 0.2,  wide: 0,   away: 0 },
+  shy:       { brow: 0.6, browTilt: 0.5, eye: 0.82, smile: 0.25, blush: 1,    wide: 0,   away: 1 },
+  surprised: { brow: -2.5, browTilt: 0,  eye: 1.35, smile: 0.1,  blush: 0.25, wide: 1,   away: 0 },
+};
+
+const face = {
+  emotion: "neutral",
+  cur: { ...EMOTIONS.neutral },
+  mouth: 0,          // apertura de boca 0..1 (viene del audio)
+  mouthTarget: 0,
+  blink: 0,
+  nextBlink: 1200,
+  blinkPhase: -1,
+  lookX: 0, lookY: 0, lookTX: 0, lookTY: 0,
+  nextGlance: 2000,
+  speaking: false,
+  thinking: false,
+  bob: 0,
+  spark: 0,
+  nextSpark: 4000,
+};
+
+function setEmotion(name) {
+  if (EMOTIONS[name]) face.emotion = name;
+}
+
+function setMouth(v) {
+  face.mouthTarget = Math.max(0, Math.min(1, v));
+}
+
+function setSpeaking(on) {
+  face.speaking = on;
+  if (!on) setMouth(0);
+}
+
+function setThinking(on) {
+  face.thinking = on;
+}
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function ellipse(c, cx, cy, rx, ry, color) {
+  c.fillStyle = color;
+  c.beginPath();
+  c.ellipse(cx, cy, Math.max(rx, 0.1), Math.max(ry, 0.1), 0, 0, Math.PI * 2);
+  c.fill();
+}
+
+function rect(c, x, y, w, h, color) {
+  c.fillStyle = color;
+  c.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+}
+
+function line(c, x1, y1, x2, y2, color, width) {
+  c.strokeStyle = color;
+  c.lineWidth = width;
+  c.lineCap = "square";
+  c.beginPath();
+  c.moveTo(x1, y1);
+  c.lineTo(x2, y2);
+  c.stroke();
+}
+
+function drawEye(c, cx, cy, open, lookX, lookY, smile) {
+  const ry = 5.2 * open;
+  const rx = 7;
+
+  if (open < 0.16) {
+    // Ojo cerrado: línea curvada hacia arriba si está sonriendo.
+    c.strokeStyle = P.outline;
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(cx - 6, cy + (smile > 0.5 ? 1 : 0));
+    c.quadraticCurveTo(cx, cy - (smile > 0.5 ? 4 : -1), cx + 6, cy + (smile > 0.5 ? 1 : 0));
+    c.stroke();
+    return;
+  }
+
+  // Contorno del ojo
+  ellipse(c, cx, cy, rx + 1, ry + 1, P.outline);
+  ellipse(c, cx, cy, rx, ry, P.white);
+
+  c.save();
+  c.beginPath();
+  c.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  c.clip();
+
+  const ix = cx + lookX * 1.6;
+  const iy = cy + 1 + lookY * 1.4;
+  ellipse(c, ix, iy, 4.6, 4.4, P.iris);
+  ellipse(c, ix, iy + 1, 4.6, 3.4, P.irisDk);
+  ellipse(c, ix, iy, 2.1, 2.1, P.pupil);
+  rect(c, ix - 3, iy - 3, 2, 2, P.white);
+  rect(c, ix + 1.5, iy + 1.5, 1, 1, "rgba(255,255,255,.7)");
+
+  // Párpado: tira de piel desde arriba según cuánto abierto está.
+  const lid = cy - ry - 1 + (1 - Math.min(open, 1)) * (ry * 2 + 2);
+  rect(c, cx - 12, lid - 6, 24, 12, P.skin);
+  c.restore();
+
+  // Pestaña superior
+  line(c, cx - 7, cy - ry + 0.5, cx + 7, cy - ry + 0.5, P.outline, 2);
+  rect(c, cx - 8, cy - ry + 2, 2, 2, P.outline);
+}
+
+function drawBrow(c, cx, y, tilt, dir) {
+  // dir: -1 ojo izquierdo (hacia afuera = x menor)
+  const innerX = cx + 6 * -dir;
+  const outerX = cx - 6 * -dir;
+  const innerY = y - tilt * 2.2;
+  const outerY = y + tilt * 2.2;
+  line(c, innerX, innerY, outerX, outerY, P.hairDk, 2);
+}
+
+function drawMouth(c, open, smile, wide) {
+  const mx = 48, my = 63;
+
+  if (wide > 0.5 && open < 0.25) {
+    // "o" de sorpresa
+    ellipse(c, mx, my, 4.5, 5.5, P.outline);
+    ellipse(c, mx, my, 3.5, 4.5, P.mouth);
+    return;
+  }
+
+  if (open >= 0.09) {
+    const ry = 1.6 + open * 5.5;
+    const rx = 4.6 + open * 1.6;
+    ellipse(c, mx, my, rx + 1, ry + 1, P.outline);
+    ellipse(c, mx, my, rx, ry, P.mouth);
+
+    c.save();
+    c.beginPath();
+    c.ellipse(mx, my, rx, ry, 0, 0, Math.PI * 2);
+    c.clip();
+    rect(c, mx - rx, my - ry, rx * 2, 2.2, P.teeth);
+    ellipse(c, mx, my + ry, rx * 0.7, ry * 0.5, P.tongue);
+    c.restore();
+    return;
+  }
+
+  // Boca cerrada: la curva decide si sonríe o frunce.
+  const curve = -smile * 4;
+  c.strokeStyle = P.outline;
+  c.lineWidth = 2;
+  c.lineCap = "square";
+  c.beginPath();
+  c.moveTo(mx - 5, my);
+  c.quadraticCurveTo(mx, my + curve, mx + 5, my);
+  c.stroke();
+
+  if (smile > 0.6) {
+    rect(c, mx - 6, my - 1, 1, 2, P.outline);
+    rect(c, mx + 5, my - 1, 1, 2, P.outline);
+  }
+}
+
+function drawFace(time) {
+  const cur = face.cur;
+  const target = EMOTIONS[face.emotion] || EMOTIONS.neutral;
+
+  for (const key of Object.keys(target)) {
+    cur[key] = lerp(cur[key], target[key], 0.16);
+  }
+
+  face.mouth = lerp(face.mouth, face.mouthTarget, 0.45);
+
+  // Parpadeo
+  face.nextBlink -= 16;
+  if (face.blinkPhase < 0 && face.nextBlink <= 0) {
+    face.blinkPhase = 0;
+    face.nextBlink = 2200 + Math.random() * 3600;
+  }
+  if (face.blinkPhase >= 0) {
+    face.blinkPhase += 16;
+    const p = face.blinkPhase / 140;
+    face.blink = p >= 1 ? (face.blinkPhase = -1, 0) : Math.sin(p * Math.PI);
+  } else {
+    face.blink = 0;
+  }
+
+  // Mirada: mira a lados cada tanto, o para arriba si está pensando
+  face.nextGlance -= 16;
+  if (face.nextGlance <= 0) {
+    face.nextGlance = 1800 + Math.random() * 3400;
+    if (face.thinking) {
+      face.lookTX = (Math.random() - 0.5) * 1.2;
+      face.lookTY = -1.6;
+    } else if (face.speaking) {
+      face.lookTX = (Math.random() - 0.5) * 0.8;
+      face.lookTY = (Math.random() - 0.5) * 0.6;
+    } else {
+      face.lookTX = (Math.random() - 0.5) * 2.4;
+      face.lookTY = (Math.random() - 0.5) * 1.6;
+    }
+  }
+  face.lookX = lerp(face.lookX, face.lookTX + cur.away * 1.6 * (face.emotion === "shy" ? -1 : 1), 0.08);
+  face.lookY = lerp(face.lookY, face.lookTY, 0.08);
+
+  // Respiración + cabeceo al hablar
+  const breath = Math.sin(time / 1100) * 0.8;
+  const nod = face.speaking ? face.mouth * 1.6 : 0;
+  face.bob = breath + nod;
+
+  // Chispa de felicidad de vez en cuando
+  face.nextSpark -= 16;
+  if (face.nextSpark <= 0) {
+    face.nextSpark = 3500 + Math.random() * 4000;
+    face.spark = cur.smile > 0.7 ? 1 : 0;
+  }
+  if (face.spark > 0) face.spark = Math.max(0, face.spark - 0.03);
+
+  g.clearRect(0, 0, W, H);
+  g.save();
+  g.translate(0, Math.round(face.bob));
+
+  // ── Cuerpo / cuello
+  ellipse(g, 48, 90, 30, 18, P.cloth);
+  rect(g, 40, 62, 16, 12, P.skinSh);
+  rect(g, 40, 62, 16, 3, P.skinDk);
+
+  // ── Pelo de atrás
+  ellipse(g, 48, 42, 31, 32, P.outline);
+  ellipse(g, 48, 42, 30, 31, P.hairDk);
+  ellipse(g, 48, 40, 28, 29, P.hair);
+
+  // ── Orejas
+  ellipse(g, 25, 48, 4, 6, P.skinSh);
+  ellipse(g, 71, 48, 4, 6, P.skinSh);
+
+  // ── Cara
+  ellipse(g, 48, 45, 24, 26, P.outline);
+  ellipse(g, 48, 45, 23, 25, P.skin);
+  // Sombra del lado derecho
+  c_shadow();
+
+  // ── Fleco
+  ellipse(g, 48, 26, 26, 15, P.outline);
+  ellipse(g, 48, 26, 25, 14, P.hair);
+  // Mechones en punta
+  strand(34, 33, 30, 41, 38, 34);
+  strand(44, 34, 41, 43, 50, 33);
+  strand(58, 33, 54, 42, 63, 34);
+  // Lazo de luz
+  rect(g, 36, 17, 22, 2, P.hairLt);
+  rect(g, 40, 15, 12, 2, P.hairLt);
+  // Costados
+  ellipse(g, 27, 52, 6, 16, P.outline);
+  ellipse(g, 69, 52, 6, 16, P.outline);
+  ellipse(g, 27, 52, 5, 15, P.hair);
+  ellipse(g, 69, 52, 5, 15, P.hair);
+  ellipse(g, 27, 58, 3, 7, P.hairDk);
+  ellipse(g, 69, 58, 3, 7, P.hairDk);
+
+  // ── Cejas
+  const browY = 39 - cur.brow;
+  drawBrow(g, 35, browY, cur.browTilt, -1);
+  drawBrow(g, 61, browY, cur.browTilt, 1);
+
+  // ── Ojos
+  const eyeOpen = clamp(cur.eye * (1 - face.blink) * (face.thinking ? 0.9 : 1), 0, 1.5);
+  drawEye(g, 35, 47, eyeOpen, face.lookX, face.lookY, cur.smile);
+  drawEye(g, 61, 47, eyeOpen, face.lookX, face.lookY, cur.smile);
+
+  // ── Nariz
+  rect(g, 47, 55, 2, 2, P.skinDk);
+
+  // ── Rubor
+  if (cur.blush > 0.05) {
+    g.globalAlpha = Math.min(0.85, cur.blush);
+    ellipse(g, 30, 55, 5, 3, P.blush);
+    ellipse(g, 66, 55, 5, 3, P.blush);
+    rect(g, 27, 54, 1, 3, "rgba(255,255,255,.35)");
+    rect(g, 63, 54, 1, 3, "rgba(255,255,255,.35)");
+    g.globalAlpha = 1;
+  }
+
+  // ── Boca
+  const mouthOpen = face.thinking && !face.speaking ? 0 : face.mouth;
+  drawMouth(g, mouthOpen, cur.smile, cur.wide);
+
+  // ── Chispa
+  if (face.spark > 0) {
+    g.globalAlpha = face.spark;
+    const sx = 76, sy = 24;
+    rect(g, sx, sy - 4, 2, 10, "#ffe89a");
+    rect(g, sx - 4, sy, 10, 2, "#ffe89a");
+    g.globalAlpha = 1;
+  }
+
+  g.restore();
+
+  function c_shadow() {
+    g.save();
+    g.beginPath();
+    g.ellipse(48, 45, 23, 25, 0, 0, Math.PI * 2);
+    g.clip();
+    ellipse(g, 66, 50, 16, 22, "rgba(226,164,139,.35)");
+    ellipse(g, 48, 66, 20, 8, "rgba(226,164,139,.35)");
+    g.restore();
+  }
+
+  function strand(x1, y1, x2, y2, x3, y3) {
+    g.fillStyle = P.outline;
+    g.beginPath();
+    g.moveTo(x1, y1);
+    g.lineTo(x2, y2);
+    g.lineTo(x3, y3);
+    g.closePath();
+    g.fill();
+    g.fillStyle = P.hair;
+    g.beginPath();
+    g.moveTo(x1, y1);
+    g.lineTo(x2 - 1, y2);
+    g.lineTo(x3 - 1, y3);
+    g.closePath();
+    g.fill();
+  }
+}
+
+/** Escala la cara chiquita a tamaño de ventana, con vecino más cercano. */
+function fitCanvas() {
+  const stage = document.getElementById("stage");
+  const availW = stage.clientWidth - 8;
+  const availH = Math.max(180, Math.round(window.innerHeight * 0.36));
+  let scale = Math.max(2, Math.floor(Math.min(availW / W, availH / H)));
+  scale = Math.min(scale, 8);
+
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = W * scale + "px";
+  canvas.style.height = H * scale + "px";
+  canvas.width = Math.round(W * scale * dpr);
+  canvas.height = Math.round(H * scale * dpr);
+  ctx.imageSmoothingEnabled = false;
+  canvas._scale = scale;
+  canvas._dpr = dpr;
+}
+
+function render(time) {
+  drawFace(time);
+
+  const scale = canvas._scale || 3;
+  const dpr = canvas._dpr || 1;
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(layer, 0, 0, W, H, 0, 0, W * scale * dpr, H * scale * dpr);
+
+  requestAnimationFrame(render);
+}
+
+window.addEventListener("resize", fitCanvas);
+fitCanvas();
+requestAnimationFrame(render);
+
+/* ══════════════════════════════════════════════════════════════════
+   2. VOZ — reproduce la respuesta y sincroniza la boca con el audio
+   ══════════════════════════════════════════════════════════════════ */
+
+let audioCtx = null;
+let analyser = null;
+let timeData = null;
+let currentAudio = null;
+let synthTimer = null;
+
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.6;
+    timeData = new Uint8Array(analyser.fftSize);
+    analyser.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === "suspended") void audioCtx.resume();
+  return audioCtx;
+}
+
+/** Nivel de apertura de boca a partir del RMS del audio. */
+function audioMouthLevel() {
+  if (!analyser) return 0;
+  analyser.getByteTimeDomainData(timeData);
+  let sum = 0;
+  for (let i = 0; i < timeData.length; i++) {
+    const v = (timeData[i] - 128) / 128;
+    sum += v * v;
+  }
+  const rms = Math.sqrt(sum / timeData.length);
+  return clamp((rms - 0.02) * 6, 0, 1);
+}
+
+function playReplyAudio(base64, emotion) {
+  stopSyntheticMouth();
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+
+  if (!base64) {
+    // Sin audio: la boca igual se mueve con un envelope inventado.
+    setEmotion(emotion || "neutral");
+    startSyntheticMouth();
+    return;
+  }
+
+  const ctxAudio = ensureAudio();
+  const el = new Audio("data:audio/wav;base64," + base64);
+  currentAudio = el;
+  setEmotion(emotion || "neutral");
+
+  if (ctxAudio) {
+    try {
+      const src = ctxAudio.createMediaElementSource(el);
+      src.connect(analyser);
+    } catch (e) {
+      console.warn("[Jarvis] no pude enganchar el analyser:", e);
+    }
+  }
+
+  setSpeaking(true);
+  setStatus("hablando", true);
+
+  el.onended = () => {
+    setSpeaking(false);
+    setMouth(0);
+    setEmotion("neutral");
+    setStatus("en línea", false);
+    currentAudio = null;
+  };
+
+  el.onerror = () => {
+    setSpeaking(false);
+    setMouth(0);
+    startSyntheticMouth();
+    setStatus("en línea", false);
+  };
+
+  void el.play().catch(() => {
+    // Autoplay bloqueado (aún no hubo gesto del usuario).
+    setSpeaking(false);
+    startSyntheticMouth();
+  });
+
+  const tick = () => {
+    if (currentAudio !== el || el.ended) return;
+    setMouth(audioMouthLevel());
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/** Boca sintética: se mueve como si hablara, con ritmo de sílabas. */
+function startSyntheticMouth() {
+  stopSyntheticMouth();
+  setSpeaking(true);
+  setStatus("hablando", true);
+  let t = 0;
+  synthTimer = setInterval(() => {
+    t += 1;
+    const syllable = Math.abs(Math.sin(t * 0.55)) * (0.5 + Math.random() * 0.5);
+    setMouth(syllable);
+  }, 70);
+}
+
+function stopSyntheticMouth() {
+  if (synthTimer) { clearInterval(synthTimer); synthTimer = null; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   3. CHAT
+   ══════════════════════════════════════════════════════════════════ */
+
+const log = document.getElementById("log");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const micBtn = document.getElementById("mic");
+const statusEl = document.getElementById("status");
+const statusText = document.getElementById("statusText");
+
+let busy = false;
+let ownReplyInFlight = false;
+let lastOwnReply = null;
+
+function setStatus(text, isBusy) {
+  statusText.textContent = text;
+  statusEl.classList.toggle("busy", Boolean(isBusy));
+}
+
+function addMessage(who, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + (who === "me" ? "me" : "jarvis");
+  if (who !== "me") {
+    const who1 = document.createElement("span");
+    who1.className = "who";
+    who1.textContent = "jarvis";
+    el.appendChild(who1);
+  }
+  el.appendChild(document.createTextNode(text));
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+function addTyping() {
+  const el = document.createElement("div");
+  el.className = "msg think";
+  el.textContent = "escribiendo…";
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+
+async function send(text) {
+  const value = (text || "").trim();
+  if (!value || busy) return;
+
+  busy = true;
+  input.value = "";
+  addMessage("me", value);
+
+  const typing = addTyping();
+  setThinking(true);
+  setStatus("pensando", true);
+  ownReplyInFlight = true;
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: value }),
+    });
+    const data = await res.json();
+    ownReplyInFlight = false;
+    typing.remove();
+
+    if (!data.ok) throw new Error(data.error || "error");
+
+    lastOwnReply = { text: data.reply.display, at: Date.now() };
+    addMessage("jarvis", data.reply.display);
+    setThinking(false);
+    playReplyAudio(data.reply.audio, data.reply.emotion);
+  } catch (error) {
+    ownReplyInFlight = false;
+    typing.remove();
+    setThinking(false);
+    setEmotion("shy");
+    addMessage("jarvis", "Se me cruzaron los cables un segundo. Probá de nuevo, que ya estoy");
+    setStatus("en línea", false);
+    console.error("[Jarvis]", error);
+  } finally {
+    busy = false;
+    input.focus();
+  }
+}
+
+sendBtn.addEventListener("click", () => send(input.value));
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send(input.value);
+  }
+});
+
+/* ══════════════════════════════════════════════════════════════════
+   4. NOTA DE VOZ (micrófono → Whisper → chat)
+   ══════════════════════════════════════════════════════════════════ */
+
+let recorder = null;
+let recStream = null;
+let recChunks = [];
+
+micBtn.addEventListener("click", async () => {
+  if (recorder && recorder.state === "recording") {
+    recorder.stop();
+    return;
+  }
+
+  try {
+    recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    addMessage("jarvis", "no me dejaste usar el micrófono 😅");
+    return;
+  }
+
+  recChunks = [];
+  recorder = new MediaRecorder(recStream);
+  recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+  recorder.onstop = async () => {
+    micBtn.classList.remove("rec");
+    setStatus("pensando", true);
+    setThinking(true);
+    try {
+      const blob = new Blob(recChunks, { type: recorder.mimeType || "audio/webm" });
+      const buf = await blob.arrayBuffer();
+      const res = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audio: arrayBufferToBase64(buf),
+          ext: (recorder.mimeType || "audio/webm").includes("ogg") ? "ogg" : "webm",
+        }),
+      });
+      const data = await res.json();
+      setThinking(false);
+      if (data.ok && data.text) {
+        await send(data.text);
+      } else {
+        setStatus("en línea", false);
+        setThinking(false);
+        addMessage("jarvis", "no te escuché bien, repetime 🙈");
+      }
+    } catch (e) {
+      setThinking(false);
+      setStatus("en línea", false);
+      console.error("[Jarvis] transcripción:", e);
+    } finally {
+      recStream?.getTracks().forEach((t) => t.stop());
+      recStream = null;
+    }
+  };
+  recorder.start();
+  micBtn.classList.add("rec");
+  setStatus("escuchando", true);
+  setEmotion("neutral");
+});
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   5. EVENTOS DEL SERVIDOR (respuestas que nacen en la terminal, etc.)
+   ══════════════════════════════════════════════════════════════════ */
+
+const events = new EventSource("/events");
+
+events.onmessage = (e) => {
+  let ev;
+  try { ev = JSON.parse(e.data); } catch { return; }
+
+  if (ev.type === "reply") {
+    // La respuesta a NUESTRO mensaje llega por el fetch; la del SSE es la
+    // misma, así que la ignoramos (por las dudas, comparamos el texto).
+    if (ownReplyInFlight) { ownReplyInFlight = false; return; }
+    if (
+      lastOwnReply &&
+      ev.text === lastOwnReply.text &&
+      Date.now() - lastOwnReply.at < 4000
+    ) return;
+    if (busy) return;
+
+    // Nació en la terminal: la mostramos y la escuchamos acá.
+    addMessage("jarvis", ev.text);
+    playReplyAudio(ev.audio || null, ev.emotion);
+  } else if (ev.type === "status") {
+    if (ev.status === "thinking") { setThinking(true); setStatus("pensando", true); }
+    if (ev.status === "idle") { setThinking(false); if (!face.speaking) setStatus("en línea", false); }
+    if (ev.status === "speaking") setStatus("hablando", true);
+  } else if (ev.type === "expression") {
+    // Código de emoción de Live2D → nombre de emoción pixel.
+    const map = { f00: "neutral", f01: "angry", f03: "shy", f04: "happy", f05: "surprised", f07: "sad" };
+    if (map[ev.expression]) setEmotion(map[ev.expression]);
+  } else if (ev.type === "speak") {
+    if (ev.on) { setSpeaking(true); setStatus("hablando", true); }
+    else { setSpeaking(false); setMouth(0); setStatus("en línea", false); }
+  }
+};
+
+events.onerror = () => {
+  setStatus("conectando…", true);
+};
+
+/* ══════════════════════════════════════════════════════════════════
+   6. BOTONES DE VENTANA (solo dentro de Electron)
+   ══════════════════════════════════════════════════════════════════ */
+
+if (window.jarvisDesktop && window.jarvisDesktop.isDesktop) {
+  document.getElementById("winbtns").hidden = false;
+  document.getElementById("btnMin").onclick = () => window.jarvisDesktop.minimize();
+  document.getElementById("btnClose").onclick = () => window.jarvisDesktop.close();
+  let top = false;
+  document.getElementById("btnTop").onclick = (e) => {
+    top = !top;
+    window.jarvisDesktop.setAlwaysOnTop(top);
+    e.currentTarget.style.opacity = top ? "1" : ".5";
+  };
+}
+
+// Primer mensaje de bienvenida cuando no hay nadie escribiendo.
+if (!log.children.length) {
+  const el = addMessage("jarvis", "Jarvis en línea. Escribime o apretá el micrófono");
+  el.style.opacity = "0.9";
+}
+
+input.focus();
+
+// Para debug desde la consola (y desde scripts/shot-pixel.ts).
+window.__jarvis = { face, send, setEmotion, setMouth, playReplyAudio };
+</script>
+</body>
+</html>

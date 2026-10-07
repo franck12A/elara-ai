@@ -1,7 +1,7 @@
 {
-  "name": "elara-ai",
+  "name": "jarvis-ai",
   "version": "1.0.0",
-  "description": "Personal AI companion with voice interaction and physical hardware.",
+  "description": "Jarvis: personal AI butler with memory, voice, avatar and real tools (reminders, weather, computer control).",
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
@@ -10,7 +10,9 @@
     "test:voice": "tsx src/voice/test-voice.ts",
     "wa": "tsx src/whatsapp/main.ts",
     "tg": "tsx src/telegram/main.ts",
-    "build": "tsc && node -e \"require('fs').copyFileSync('src/face/avatar.html','dist/face/avatar.html'); require('fs').cpSync('src/face/vendor','dist/face/vendor',{recursive:true})\"",
+    "desktop": "electron desktop/main.mjs",
+    "face": "tsx scripts/serve-mock.ts",
+    "build": "tsc && node -e \"const fs=require('fs'); for (const f of ['avatar.html','pixel.html','vrm.html']) fs.copyFileSync('src/face/'+f,'dist/face/'+f); fs.cpSync('src/face/vendor','dist/face/vendor',{recursive:true})\"",
     "start": "node dist/telegram/main.js"
   },
   "keywords": [
@@ -19,8 +21,9 @@
     "anthropic",
     "typescript",
     "nodejs",
-    "esp32",
-    "voice-assistant"
+    "jarvis",
+    "voice-assistant",
+    "personal-assistant"
   ],
   "author": "Franco",
   "license": "ISC",
@@ -38,6 +41,7 @@
   "devDependencies": {
     "@types/node": "^26.3.0",
     "@types/qrcode-terminal": "^0.12.2",
+    "electron": "^41.7.1",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2"
   }

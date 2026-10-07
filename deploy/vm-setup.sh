@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Setup de la VM de Oracle para Elara.
+# Setup de la VM de Oracle para Jarvis.
 # Idempotente: se puede correr varias veces sin romper nada.
-# Uso (después de hacer scp del .env a /tmp/elara.env):
+# Uso (después de hacer scp del .env a /tmp/jarvis.env):
 #   sudo bash deploy/oracle-vm-setup.sh
 
 set -euo pipefail
 
-REPO="https://github.com/franck12A/elara-ai.git"
-DIR="/opt/elara"
-ENV_SRC="/tmp/elara.env"
+REPO="https://github.com/franck12A/jarvis-ai.git"
+DIR="/opt/jarvis"
+ENV_SRC="/tmp/jarvis.env"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "❌ Corré con sudo: sudo bash $0"; exit 1
@@ -40,7 +40,7 @@ elif [ -f "$DIR/.env" ]; then
   echo "   .env ya existía, lo dejo como está"
 else
   echo "   ⚠️  No hay $ENV_SRC ni $DIR/.env: faltan las claves (el bot no va a arrancar)."
-  echo "      Copialas desde tu compu:  scp -i ~/.ssh/gcp_elara .env usuario@IP:/tmp/elara.env"
+  echo "      Copialas desde tu compu:  scp -i ~/.ssh/gcp_jarvis .env usuario@IP:/tmp/jarvis.env"
 fi
 
 echo "🔨 4/6 Instalando dependencias y compilando…"
@@ -49,15 +49,15 @@ npm install --silent
 npm run build
 
 echo "🛠️ 5/6 Instalando servicio systemd…"
-cat > /etc/systemd/system/elara.service <<'EOF'
+cat > /etc/systemd/system/jarvis.service <<'EOF'
 [Unit]
-Description=Elara (bot de Telegram)
+Description=Jarvis (bot de Telegram)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/elara
+WorkingDirectory=/opt/jarvis
 ExecStart=/usr/bin/node dist/telegram/main.js
 Restart=always
 RestartSec=5
@@ -67,18 +67,18 @@ Environment=NODE_ENV=production
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable elara >/dev/null
+systemctl enable jarvis >/dev/null
 
 echo "🚀 6/6 Arrancando…"
-systemctl restart elara
+systemctl restart jarvis
 sleep 5
-if systemctl is-active --quiet elara; then
+if systemctl is-active --quiet jarvis; then
   echo ""
-  echo "✅ Elara corriendo. Logs: journalctl -u elara -f"
-  journalctl -u elara -n 5 --no-pager
+  echo "✅ Jarvis corriendo. Logs: journalctl -u jarvis -f"
+  journalctl -u jarvis -n 5 --no-pager
 else
   echo ""
-  echo "❌ El servicio no arrancó. Revisá: journalctl -u elara -n 30 --no-pager"
-  journalctl -u elara -n 30 --no-pager || true
+  echo "❌ El servicio no arrancó. Revisá: journalctl -u jarvis -n 30 --no-pager"
+  journalctl -u jarvis -n 30 --no-pager || true
   exit 1
 fi

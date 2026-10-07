@@ -1,4 +1,4 @@
-export type ElaraEmotion =
+export type JarvisEmotion =
   | "neutral"
   | "happy"
   | "sad"
@@ -6,7 +6,7 @@ export type ElaraEmotion =
   | "shy"
   | "surprised";
 
-const TAG_TO_EMOTION: Record<string, ElaraEmotion> = {
+const TAG_TO_EMOTION: Record<string, JarvisEmotion> = {
   excited: "happy",
   happy: "happy",
   laughs: "happy",
@@ -37,7 +37,7 @@ const TAG_TO_EMOTION: Record<string, ElaraEmotion> = {
  * - f05: sorprendida (ojos muy abiertos, cejas arriba)
  * - f07: triste (cejas caídas, boca fruncida)
  */
-export const EMOTION_EXPRESSIONS: Record<ElaraEmotion, string> = {
+export const EMOTION_EXPRESSIONS: Record<JarvisEmotion, string> = {
   neutral: "f00",
   happy: "f04",
   sad: "f07",
@@ -46,7 +46,7 @@ export const EMOTION_EXPRESSIONS: Record<ElaraEmotion, string> = {
   surprised: "f05",
 };
 
-export function emotionFromTags(text: string): ElaraEmotion {
+export function emotionFromTags(text: string): JarvisEmotion {
   const tags = text.match(/\[[^\]]+\]/g) ?? [];
 
   for (const tag of tags) {

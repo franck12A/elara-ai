@@ -19,6 +19,10 @@ export interface Config {
     voiceId: string;
     model: string;
   };
+  /** Ciudad default para la herramienta de clima. */
+  weather: {
+    location: string;
+  };
 }
 
 const DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
@@ -40,6 +44,8 @@ export function validateConfig(options?: ValidateConfigOptions): Config {
   const elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID;
   const elevenLabsModel =
     process.env.ELEVENLABS_MODEL || "eleven_v3";
+  const weatherLocation =
+    process.env.WEATHER_LOCATION?.trim() || "Buenos Aires";
 
   const errors: string[] = [];
 
@@ -97,6 +103,9 @@ export function validateConfig(options?: ValidateConfigOptions): Config {
       apiKey: elevenLabsApiKey ?? "",
       voiceId: elevenLabsVoiceId ?? "",
       model: elevenLabsModel,
+    },
+    weather: {
+      location: weatherLocation,
     },
   };
 }

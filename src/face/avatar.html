@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Elara</title>
+  <title>Jarvis</title>
   <style>
     html, body {
       margin: 0;
@@ -37,7 +37,7 @@
 
     function fail(msg) {
       setStatus("⚠️ " + msg);
-      console.error("[Elara] " + msg);
+      console.error("[Jarvis] " + msg);
     }
   </script>
   <script
@@ -136,7 +136,7 @@
         model.position.set(w / 2, h * 0.98);
       }
 
-      setStatus("Cargando el modelo de Elara…");
+      setStatus("Cargando el modelo de Jarvis…");
 
       const modelPromise = PIXI.live2d.Live2DModel.from(MODEL_URL, {
         autoInteract: true,
@@ -161,9 +161,9 @@
           app.stage.addChild(m);
           m.motion("Idle");
           m.on("motionfinish", () => m.motion("Idle"));
-          setStatus("ELARA");
+          setStatus("JARVIS");
           document.body.dataset.ready = "true";
-          window.__elara = { app, model, layout };
+          window.__jarvis = { app, model, layout };
         },
         (error) => {
           fail("no pude cargar el modelo: " + error.message);
@@ -296,7 +296,7 @@
     };
 
     source.onerror = () => {
-      if (!model) setStatus("ELARA (reconectando…)");
+      if (!model) setStatus("JARVIS (reconectando…)");
     };
   </script>
 </body>

@@ -13,7 +13,7 @@ dist/
 # Local data and memory
 data/
 
-# Sesión de WhatsApp de Elara (credenciales — nunca commitear)
+# Sesión de WhatsApp de Jarvis (credenciales — nunca commitear)
 wa_auth/
 
 # Generated files
@@ -29,10 +29,10 @@ __pycache__/
 
 # Logs y capturas de debug
 *.log
-elara-*.png
+jarvis-*.png
 
 # Prototipo de animación facial
 frames/
 models/
 face_landmarks.json
-elara-talking.mp4
+jarvis-talking.mp4

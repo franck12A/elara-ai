@@ -8,7 +8,8 @@ import makeWASocket, {
   type WAMessage,
   type WASocket,
 } from "@whiskeysockets/baileys";
-import type { Elara } from "../elara.js";
+import type { Jarvis } from "../jarvis.js";
+import { speakableOf } from "../session.js";
 import type { VoiceService } from "../voice/voice.service.js";
 import {
   hasFfmpeg,
@@ -22,19 +23,19 @@ export interface WhatsAppBridgeOptions {
   /** Carpeta donde se guarda la sesión de WhatsApp (no commitear). */
   authDir: string;
   /**
-   * Número propio de Elara (solo dígitos, con código de país).
+   * Número propio de Jarvis (solo dígitos, con código de país).
    * Si está, la primera conexión se hace por código de 8 dígitos en
    * lugar de QR: Ajustes → Dispositivos vinculados → Vincular dispositivo.
    */
   pairingNumber?: string | undefined;
   /**
-   * Número autorizado a hablar con Elara (solo dígitos, con código de país).
+   * Número autorizado a hablar con Jarvis (solo dígitos, con código de país).
    * Si no está, cualquiera que le escriba obtiene respuesta.
    */
   ownerNumber?: string | undefined;
   /** Formato de respuesta: texto, nota de voz, o ambos. */
   replyMode: ReplyMode;
-  /** Horarios locales (["HH:MM"]) en los que Elara escribe primero. */
+  /** Horarios locales (["HH:MM"]) en los que Jarvis escribe primero. */
   proactiveTimes: string[];
   /** Prompt opcional para guiar los mensajes proactivos. */
   proactivePrompt?: string | undefined;
@@ -48,12 +49,13 @@ interface ChatQueue {
 const RECONNECT_DELAY_MS = 3_000;
 const PROACTIVE_CHECK_MS = 30_000;
 const DEFAULT_PROACTIVE_PROMPT =
-  "No te estoy hablando: es un horario programado y querés saludarme. " +
-  "Mandame un mensaje proactivo corto y natural, como lo haría una compañera " +
-  "(buenos días, buenas noches o un seguimiento de algo de lo que hayamos hablado).";
+  "No te estoy hablando: es un horario programado. Mandame un mensaje proactivo " +
+  "corto y con chispa, como lo haría Jarvis: un buen día con un dato útil (el clima, " +
+  "la hora o algo de lo que hayamos hablado) o un seguimiento directo de algo pendiente. " +
+  "Nada de cursilerías ni relleno.";
 
 export class WhatsAppBridge {
-  private readonly elara: Elara;
+  private readonly jarvis: Jarvis;
   private readonly voice: VoiceService;
   private readonly options: WhatsAppBridgeOptions;
   private sock: WASocket | undefined;
@@ -66,8 +68,8 @@ export class WhatsAppBridge {
   /** Mensaje de emparejamiento pendiente (se resuelve al escanear/ingresar el código). */
   private pairingRequested = false;
 
-  constructor(elara: Elara, voice: VoiceService, options: WhatsAppBridgeOptions) {
-    this.elara = elara;
+  constructor(jarvis: Jarvis, voice: VoiceService, options: WhatsAppBridgeOptions) {
+    this.jarvis = jarvis;
     this.voice = voice;
     this.options = options;
   }
@@ -109,7 +111,7 @@ export class WhatsAppBridge {
 
       if (connection === "open") {
         this.connected = true;
-        console.log("✅ Elara conectada a WhatsApp.");
+        console.log("✅ Jarvis conectada a WhatsApp.");
         this.startProactiveScheduler();
       }
 
@@ -159,7 +161,7 @@ export class WhatsAppBridge {
 
       try {
         const code = await sock.requestPairingCode(this.options.pairingNumber);
-        console.log("\n📱 Para vincular a Elara, en tu celular:");
+        console.log("\n📱 Para vincular a Jarvis, en tu celular:");
         console.log("   Ajustes → Dispositivos vinculados → Vincular dispositivo");
         console.log("   → \"Vincular con número de teléfono\"");
         console.log(`   Código: ${code}\n`);
@@ -171,7 +173,7 @@ export class WhatsAppBridge {
       return;
     }
 
-    console.log("\n📱 Escaneá este QR con Elara (Ajustes → Dispositivos vinculados):\n");
+    console.log("\n📱 Escaneá este QR con Jarvis (Ajustes → Dispositivos vinculados):\n");
     qrcode.generate(qr, { small: true });
   }
 
@@ -213,15 +215,15 @@ export class WhatsAppBridge {
     const userText = await this.extractUserText(sock, message, contentType);
     if (!userText) return;
 
-    console.log(`📨 WhatsApp → Elara: ${userText}`);
+    console.log(`📨 WhatsApp → Jarvis: ${userText}`);
 
     await sock.sendPresenceUpdate("composing", jid);
 
     let response: string;
     try {
-      response = await this.elara.chat(userText);
+      response = await this.jarvis.chat(userText);
     } catch (error) {
-      console.error("❌ Error de Elara:", error);
+      console.error("❌ Error de Jarvis:", error);
       await sock.sendPresenceUpdate("paused", jid);
       return;
     }
@@ -230,7 +232,7 @@ export class WhatsAppBridge {
     await this.sendReply(sock, jid, response);
   }
 
-  /** Solo el dueño (si está configurado) puede hablar con Elara. */
+  /** Solo el dueño (si está configurado) puede hablar con Jarvis. */
   private isAuthorized(jid: string): boolean {
     const owner = this.options.ownerNumber;
     if (!owner) return true;
@@ -350,7 +352,14 @@ export class WhatsAppBridge {
     }
 
     try {
-      const stream = await this.voice.generateSpeech(responseWithTags);
+      // Mismo criterio que la desktop: sin texto hablable no hay TTS
+      // (ElevenLabs rechaza el texto vacío con 400 input_text_empty).
+      const spoken = speakableOf(responseWithTags);
+      if (!spoken) {
+        if (fallbackText) await sock.sendMessage(jid, { text: fallbackText });
+        return;
+      }
+      const stream = await this.voice.generateSpeech(spoken);
       const chunks: Uint8Array[] = [];
       const reader = stream.getReader();
       while (true) {
@@ -373,7 +382,29 @@ export class WhatsAppBridge {
     }
   }
 
-  // ── Mensajes proactivos (que Elara escriba primero) ────────────────
+  /**
+   * Le manda algo al dueño sin que él escriba antes: lo usan los
+   * recordatorios del scheduler. Requiere WA_OWNER_NUMBER configurado.
+   */
+  async notifyOwner(response: string): Promise<void> {
+    if (!this.connected || !this.sock) {
+      console.warn(
+        "⚠️  No puedo entregar recordatorios: la conexión de WhatsApp no está lista.",
+      );
+      return;
+    }
+    if (!this.options.ownerNumber) {
+      console.warn(
+        "⚠️  No puedo entregar recordatorios: falta WA_OWNER_NUMBER en .env.",
+      );
+      return;
+    }
+
+    const jid = `${this.options.ownerNumber}@s.whatsapp.net`;
+    await this.sendReply(this.sock, jid, response);
+  }
+
+  // ── Mensajes proactivos (que Jarvis escriba primero) ────────────────
 
   private startProactiveScheduler(): void {
     if (this.proactiveTimer) return;
@@ -381,7 +412,7 @@ export class WhatsAppBridge {
     if (!this.options.ownerNumber) {
       console.warn(
         "⚠️  WA_PROACTIVE_TIMES configurado pero sin WA_OWNER_NUMBER: " +
-          "Elara no sabría a quién escribirle.",
+          "Jarvis no sabría a quién escribirle.",
       );
       return;
     }
@@ -419,7 +450,7 @@ export class WhatsAppBridge {
 
     try {
       console.log(`🌅 Mensaje proactivo programado (${hhmm}).`);
-      const response = await this.elara.chat(prompt);
+      const response = await this.jarvis.chat(prompt);
       await this.sendReply(this.sock, jid, response);
     } catch (error) {
       console.error("❌ Error en mensaje proactivo:", error);

@@ -1,5 +1,6 @@
 import { Bot, GrammyError, InputFile, type Context } from "grammy";
-import type { Elara } from "../elara.js";
+import type { Jarvis } from "../jarvis.js";
+import { speakableOf } from "../session.js";
 import type { VoiceService } from "../voice/voice.service.js";
 import {
   hasFfmpeg,
@@ -16,7 +17,12 @@ export interface TelegramBotOptions {
   ownerId?: string | undefined;
   /** Formato de respuesta: texto, nota de voz, o ambos. */
   replyMode: ReplyMode;
-  /** Horarios locales (["HH:MM"]) en los que Elara escribe primero. */
+  /**
+   * Master switch de los mensajes que Jarvis manda sin que la hablen
+   * (proactivos programados + antojos). false = nunca escribe primero.
+   */
+  outreachEnabled: boolean;
+  /** Horarios locales (["HH:MM"]) en los que Jarvis escribe primero. */
   proactiveTimes: string[];
   /** Prompt opcional para guiar los mensajes proactivos. */
   proactivePrompt?: string | undefined;
@@ -31,9 +37,10 @@ export interface TelegramBotOptions {
 
 const PROACTIVE_CHECK_MS = 30_000;
 const DEFAULT_PROACTIVE_PROMPT =
-  "No te estoy hablando: es un horario programado y querés saludarme. " +
-  "Mandame un mensaje proactivo corto y natural, como lo haría una compañera " +
-  "(buenos días, buenas noches o un seguimiento de algo de lo que hayamos hablado).";
+  "No te estoy hablando: es un horario programado. Mandame un mensaje proactivo " +
+  "corto y con chispa, como lo haría Jarvis: un buen día con un dato útil (el clima, " +
+  "la hora o algo de lo que hayamos hablado) o un seguimiento directo de algo pendiente. " +
+  "Nada de cursilerías ni relleno.";
 
 // ── Mensajes espontáneos ("antojos": escribe cuando quiere) ─────────
 const DEFAULT_SPONTANEOUS_MIN_MINUTES = 45;
@@ -41,11 +48,15 @@ const DEFAULT_SPONTANEOUS_MAX_MINUTES = 180;
 const DEFAULT_SPONTANEOUS_WINDOW: [number, number] = [540, 1380];
 /** A veces no le pinta y no manda nada: así no queda predecible. */
 const SPONTANEOUS_SKIP_CHANCE = 0.25;
+/** Si algo se rompe, Jarvis lo cuenta como lo contaría una persona. */
+const HUMAN_ERROR_REPLY =
+  "[nervous] Se me cruzaron los cables un segundo. Probá de nuevo, que ya estoy.";
+
 const DEFAULT_SPONTANEOUS_PROMPT =
-  "No te estoy hablando: te agarró el antojo de escribirte de la nada. " +
-  "Mandame un mensaje espontáneo corto y natural, como lo haría una compañera " +
-  "que está pensando en la otra persona: algo que se te ocurrió, una pregunta, " +
-  "un comentario o un saludo según la hora.";
+  "No te estoy hablando: te agarró con tiempo y se te ocurrió algo que vale la pena " +
+  "contarle. Mandame un mensaje espontáneo corto, como Jarvis pensando en su trabajo: " +
+  "un dato que viste en la conversación, una idea, una observación con chispa o una " +
+  "pregunta puntual según la hora. Al grano, sin relleno.";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -95,9 +106,9 @@ function formatWindow([from, to]: [number, number]): string {
   return `${hhmm(from)}-${hhmm(to)}`;
 }
 
-export class ElaraTelegramBot {
+export class JarvisTelegramBot {
   private readonly bot: Bot;
-  private readonly elara: Elara;
+  private readonly jarvis: Jarvis;
   private readonly voice: VoiceService;
   private readonly options: TelegramBotOptions;
   private readonly queues = new Map<number, { tail: Promise<void> }>();
@@ -113,11 +124,11 @@ export class ElaraTelegramBot {
   private readonly replyHistory: Array<"text" | "voice"> = [];
 
   constructor(
-    elara: Elara,
+    jarvis: Jarvis,
     voice: VoiceService,
     options: TelegramBotOptions,
   ) {
-    this.elara = elara;
+    this.jarvis = jarvis;
     this.voice = voice;
     this.options = options;
     this.bot = new Bot(options.token);
@@ -148,9 +159,17 @@ export class ElaraTelegramBot {
     });
 
     this.connected = true;
-    console.log(`🤖 Elara está en Telegram como @${me.username}.`);
-    this.startProactiveScheduler();
-    this.startSpontaneousScheduler();
+    console.log(`🤖 Jarvis está en Telegram como @${me.username}.`);
+
+    if (this.options.outreachEnabled) {
+      this.startProactiveScheduler();
+      this.startSpontaneousScheduler();
+    } else {
+      console.log(
+        "📴 Mensajes salientes apagados (TG_OUTREACH_ENABLED=false): " +
+          "Jarvis no te escribe primero. Respondé cuando le escribas.",
+      );
+    }
 
     this.polling = this.bot
       .start({ drop_pending_updates: true })
@@ -207,19 +226,27 @@ export class ElaraTelegramBot {
 
     this.lastInteractionAt = Date.now();
     console.log(
-      `📨 [${ctx.from?.id ?? "?"}] Telegram → Elara: ${userText}`,
+      `📨 [${ctx.from?.id ?? "?"}] Telegram → Jarvis: ${userText}`,
     );
 
+    // Manteniendo el "escribiendo…" vivo mientras piensa y genera el audio.
+    const typing = setInterval(() => {
+      void ctx.replyWithChatAction("typing").catch(() => undefined);
+    }, 4000);
     await ctx.replyWithChatAction("typing").catch(() => undefined);
 
     let response: string;
     try {
-      response = await this.elara.chat(userText);
+      response = await this.jarvis.chat(userText);
     } catch (error) {
-      console.error("❌ Error de Elara:", error);
+      console.error("❌ Error de Jarvis:", error);
+      clearInterval(typing);
+      // Sin stack traces: él corta la charla con estilo.
+      await this.deliver(chat.id, HUMAN_ERROR_REPLY).catch(() => undefined);
       return;
     }
 
+    clearInterval(typing);
     await this.deliver(chat.id, response);
   }
 
@@ -362,7 +389,15 @@ export class ElaraTelegramBot {
         .sendChatAction(chatId, "record_voice")
         .catch(() => undefined);
 
-      const stream = await this.voice.generateSpeech(responseWithTags);
+      // Mismo criterio que la desktop: sin texto hablable no hay TTS
+      // (Jarvis puede responder con solo un gesto/emoji y ElevenLabs
+      // rechazaría el 400 input_text_empty).
+      const spoken = speakableOf(responseWithTags);
+      if (!spoken) {
+        if (fallbackText) await this.bot.api.sendMessage(chatId, fallbackText);
+        return;
+      }
+      const stream = await this.voice.generateSpeech(spoken);
       const chunks: Uint8Array[] = [];
       const reader = stream.getReader();
       while (true) {
@@ -374,14 +409,30 @@ export class ElaraTelegramBot {
       const wav = Buffer.concat(chunks.map((c) => Buffer.from(c)));
       const ogg = await wavToVoiceNote(wav);
 
-      await this.bot.api.sendVoice(chatId, new InputFile(ogg, "elara.ogg"));
+      await this.bot.api.sendVoice(chatId, new InputFile(ogg, "jarvis.ogg"));
     } catch (error) {
       console.warn("⚠️  No pude generar la nota de voz:", error);
       if (fallbackText) await this.bot.api.sendMessage(chatId, fallbackText);
     }
   }
 
-  // ── Mensajes proactivos (que Elara escriba primero) ────────────────
+  /**
+   * Le manda algo al dueño sin que él escriba antes: lo usan los
+   * recordatorios del scheduler. Requiere TG_OWNER_ID numérico.
+   */
+  async notifyOwner(response: string): Promise<void> {
+    const owner = this.options.ownerId;
+    if (!owner || !/^\d+$/.test(owner)) {
+      console.warn(
+        "⚠️  No puedo entregar recordatorios: TG_OWNER_ID tiene que ser un ID numérico.",
+      );
+      return;
+    }
+
+    await this.deliver(Number(owner), response);
+  }
+
+  // ── Mensajes proactivos (que Jarvis escriba primero) ────────────────
 
   private startProactiveScheduler(): void {
     if (this.proactiveTimer) return;
@@ -391,7 +442,7 @@ export class ElaraTelegramBot {
     if (!owner || !/^\d+$/.test(owner)) {
       console.warn(
         "⚠️  TG_PROACTIVE_TIMES configurado pero TG_OWNER_ID no es un ID " +
-          "numérico: Elara no sabe a quién escribirle (usá tu ID, no el @username).",
+          "numérico: Jarvis no sabe a quién escribirle (usá tu ID, no el @username).",
       );
       return;
     }
@@ -424,14 +475,14 @@ export class ElaraTelegramBot {
 
     try {
       console.log(`🌅 Mensaje proactivo programado (${hhmm}).`);
-      const response = await this.elara.chat(prompt);
+      const response = await this.jarvis.chat(prompt);
       await this.deliver(chatId, response);
     } catch (error) {
       console.error("❌ Error en mensaje proactivo:", error);
     }
   }
 
-  // ── Mensajes espontáneos (que Elara escriba cuando quiera) ─────────
+  // ── Mensajes espontáneos (que Jarvis escriba cuando quiera) ─────────
 
   private startSpontaneousScheduler(): void {
     if (this.spontaneousTimer) return;
@@ -440,7 +491,7 @@ export class ElaraTelegramBot {
     if (!owner || !/^\d+$/.test(owner)) {
       console.warn(
         "⚠️  Mensajes espontánes desactivados: TG_OWNER_ID tiene que ser un " +
-          "ID numérico para que Elara sepa a quién escribirle.",
+          "ID numérico para que Jarvis sepa a quién escribirle.",
       );
       return;
     }
@@ -452,7 +503,7 @@ export class ElaraTelegramBot {
 
     this.scheduleNextSpontaneous(min, max);
     console.log(
-      `✨ Antojos activos: Elara puede escribir sola entre ` +
+      `✨ Antojos activos: Jarvis puede escribir sola entre ` +
         `${formatWindow(this.spontaneousWindow)} si pasan más de ${min} min sin charlar.`,
     );
   }
@@ -493,9 +544,9 @@ export class ElaraTelegramBot {
 
     try {
       console.log(
-        `✨ Antojo de Elara (${silentMinutes.toFixed(0)} min de silencio).`,
+        `✨ Antojo de Jarvis (${silentMinutes.toFixed(0)} min de silencio).`,
       );
-      const response = await this.elara.chat(prompt);
+      const response = await this.jarvis.chat(prompt);
       // Cuenta como interacción para no amontonar antojos seguidos.
       this.lastInteractionAt = Date.now();
       await this.deliver(chatId, response);

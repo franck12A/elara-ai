@@ -5,35 +5,35 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export async function playAudio(
+async function collectStream(
   stream: ReadableStream<Uint8Array>,
-): Promise<void> {
+): Promise<Buffer> {
   const chunks: Uint8Array[] = [];
   const reader = stream.getReader();
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-
-      if (done) {
-        break;
-      }
-
-      if (value) {
-        chunks.push(value);
-      }
+      if (done) break;
+      if (value) chunks.push(value);
     }
   } finally {
     reader.releaseLock();
   }
 
-  const audioBuffer = Buffer.concat(
-    chunks.map((chunk) => Buffer.from(chunk)),
-  );
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+}
+
+export async function playAudio(
+  input: ReadableStream<Uint8Array> | Buffer,
+): Promise<void> {
+  const audioBuffer = Buffer.isBuffer(input)
+    ? input
+    : await collectStream(input);
 
   const audioPath = path.join(
     process.cwd(),
-    "temp-elara.wav",
+    "temp-jarvis.wav",
   );
 
   await fs.writeFile(audioPath, audioBuffer);

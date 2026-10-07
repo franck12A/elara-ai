@@ -1,4 +1,4 @@
-"""Detecta los landmarks faciales de elara.png con la API Tasks de mediapipe."""
+"""Detecta los landmarks faciales de jarvis.png con la API Tasks de mediapipe."""
 import json
 import mediapipe as mp
 import numpy as np
@@ -7,7 +7,7 @@ import os
 
 MODEL = os.path.join("models", "face_landmarker.task")
 
-img = Image.open("elara.png").convert("RGB")
+img = Image.open("jarvis.png").convert("RGB")
 w, h = img.size
 print("imagen:", w, "x", h)
 

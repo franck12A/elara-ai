@@ -6,10 +6,10 @@ async function main(): Promise<void> {
   const config = validateConfig();
   const voice = new VoiceService(config.elevenlabs);
 
-  console.log("🎙️ Generando voz de Elara...");
+  console.log("🎙️ Generando voz de Jarvis...");
 
   const audio = await voice.generateSpeech(
-    "Hola bro. Soy Elara y finalmente tengo voz.",
+    "Hola bro. Soy Jarvis y finalmente tengo voz.",
   );
 
   console.log("🔊 Reproduciendo...");

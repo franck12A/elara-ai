@@ -1,4 +1,4 @@
-"""Prototipo de lip-sync 2D para elara.png + voice.wav.
+"""Prototipo de lip-sync 2D para jarvis.png + voice.wav.
 
 ADVERTENCIA: esto es una deformacion 2D basica, no un modelo de difusion.
 No va a verse fotorrealista. El objetivo es ver si la sincronia y el
@@ -313,7 +313,7 @@ def main():
     with open("face_landmarks.json") as f:
         face = json.load(f)
 
-    img = Image.open("elara.png").convert("RGB")
+    img = Image.open("jarvis.png").convert("RGB")
     base = np.array(img).astype(np.float32)
     h, w = base.shape[:2]
 

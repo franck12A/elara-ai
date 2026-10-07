@@ -41,7 +41,7 @@ async function main() {
 
   await delay(2000);
 
-  console.log("El servidor está listo. Abrí un navegador en", server.url, "para ver la cara de Elara.");
+  console.log("El servidor está listo. Abrí un navegador en", server.url, "para ver la cara de Jarvis.");
   console.log("Presioná Ctrl+C para detener el servidor.");
 
   // Evitar que el proceso termine
